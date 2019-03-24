@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>ConMon!</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+</head>
+<body>
+    <div id="app">
+        <nav>
+            <ul class="hosts">
+                <li v-for="h in apphosts"
+                    :class="{ host: true, 'host-enabled': h.enabled && !h.running, 'host-running' : h.running, 'host-disabled' : !h.enabled, 'host-selected' : selected === h }"
+                    @click="selected = h">
+                    {{ h.enabled ? (h.running ? '✅' : '⏱️') : '⭕' }} {{ h.label }}
+                </li>
+            </ul>
+        </nav>
+        <main>
+
+        </main>
+    </div>
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                apphosts: [],
+            },
+            methods: {
+                
+            },
+            mounted: function () {
+            }
+        });
+    </script>
+</body>
+</html>
