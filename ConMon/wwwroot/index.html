@@ -4,32 +4,262 @@
     <meta charset="utf-8" />
     <title>ConMon!</title>
     <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <script src="https://momentjs.com/downloads/moment.js"></script>
+    <style>
+        body, #app
+        {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        #app
+        {
+            display: grid;
+            grid-template-areas: "header header" "sidebar main" "footer footer";
+            grid-template-rows: 3rem auto 3rem;
+            grid-template-columns: 300px auto;
+        }
+
+            #app > header
+            {
+                grid-area: header;
+                border-bottom: 1px solid grey;
+            }
+
+                #app > header .menu
+                {
+                    display: flex;
+                    list-style: none;
+                }
+
+                #app > header .space
+                {
+                    flex-grow: 1;
+                }
+
+                #app > header .title h1
+                {
+                    font-size: 14pt;
+                }
+
+            #app > nav
+            {
+                grid-area: sidebar;
+            }
+
+            #app > nav li
+            {
+                cursor: pointer;
+            }
+
+            #app > main
+            {
+                grid-area: main;
+                background: slategray;
+                color: whitesmoke;
+                font-family: monospace;
+                height: calc(100vh - 3rem - 3rem);
+                width: calc(100vw - 300px);
+                overflow: auto;
+            }
+
+            #app > footer
+            {
+                grid-area: footer;
+                border-top: 1px solid grey;
+            }
+
+        .host-selected span {
+            font-weight: bold;
+        }
+
+        .add-model
+        {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 100vw;
+
+            background: rgba(0,0,0,0.7);
+        }
+
+        .add-model > div {
+            padding: 2rem;
+            background: white;
+            border: 1px solid black;
+        }
+
+        .add-model-buttons {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 1rem;
+        }
+    </style>
 </head>
 <body>
     <div id="app">
+        <header>
+            <ul class="menu">
+                <li><button @click="addModel = { Program: '', Arguments: '', WorkingDirectory: '', Label: '', Cron: '*/10 * * * *' }">Add</button></li>
+                <li><button :disabled="selected === null || running[selected]" @click="trigger">Launch</button></li>
+                <li><button :disabled="selected === null" @click="erase">Erase Lines</button></li>
+                <li class="space">&nbsp;</li>
+                <li class="title"><h1>ConMon!</h1></li>
+            </ul>
+            <div v-if="addModel !== null" class="add-model">
+                <div v-if="typeof addModel === 'object'">
+                    <div>
+                        <div>Label</div>
+                        <input id="add-model-label" v-model="addModel.Label" />
+                    </div>
+                    <div>
+                        <div>Program</div>
+                        <input id="add-model-program" v-model="addModel.Program" />
+                    </div>
+                    <div>
+                        <div>Arguments</div>
+                        <input v-model="addModel.Arguments" />
+                    </div>
+                    <div>
+                        <div>Working Directory</div>
+                        <input v-model="addModel.WorkingDirectory" />
+                    </div>
+                    <div>
+                        <div>Cron Expression</div>
+                        <input v-model="addModel.Cron" />
+                    </div>
+                    <div class="add-model-buttons">
+                        <button @click="add">Ok</button>
+                        <button @click="addModel = null">Cancel</button>
+                    </div>
+                </div>
+                <div v-else-if="typeof addModel === 'string'">{{ addModel }}</div>
+            </div>
+        </header>
         <nav>
             <ul class="hosts">
                 <li v-for="h in apphosts"
-                    :class="{ host: true, 'host-enabled': h.enabled && !h.running, 'host-running' : h.running, 'host-disabled' : !h.enabled, 'host-selected' : selected === h }"
+                    :class="{ host: true, 'host-running' : running[h], 'host-selected' : selected === h }"
                     @click="selected = h">
-                    {{ h.enabled ? (h.running ? '✅' : '⏱️') : '⭕' }} {{ h.label }}
+                    {{ running[h] ? '👷' : '⏱️' }} <span>{{ h }}</span>
                 </li>
             </ul>
         </nav>
         <main>
-
+            <ul v-if="selected !== null">
+                <li v-for="(line, i) in lines[selected]">{{ i.toString().padStart(5, '\xa0') }}: {{ line }}</li>
+            </ul>
         </main>
+        <footer>
+
+        </footer>
     </div>
     <script>
-        new Vue({
+        function postData(url, data = {}, mode = 'same-origin') {
+            // Default options are marked with *
+            return fetch(url, {
+                method: "POST", // *GET, POST, PUT, DELETE, etc.
+                mode: mode, // no-cors, cors, *same-origin
+                cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+                credentials: "same-origin", // include, *same-origin, omit
+                headers: {
+                    "Content-Type": "application/json",
+                    // "Content-Type": "application/x-www-form-urlencoded",
+                },
+                redirect: "follow", // manual, *follow, error
+                referrer: "no-referrer", // no-referrer, *client
+                body: JSON.stringify(data), // body data type must match "Content-Type" header
+            })
+                .then(response => response.json()); // parses JSON response into native Javascript objects 
+        }
+        const getData = url => fetch(url).then(response => response.json());
+
+        function notify(message) {
+            return Notification.requestPermission()
+                .then(function (x) { if (x !== "granted") throw message; })
+                .then(_ => new Notification(message))
+                .catch(alert);
+        }
+        function notifyError(e) { notify(e.Message ? e.Message : e); console.log(e); }
+        const notAnExecption = function (r) { if (r !== true) throw r; return true; };
+
+        const app = new Vue({
             el: '#app',
             data: {
                 apphosts: [],
+                selected: null,
+                addModel: null,
+                lines: {},
+                lastLine: {},
+                running: {}
             },
             methods: {
-                
+                now: () => moment(),
+                periodicCheck: function () {
+                    const self = this;
+                    for (let i = 0; i < self.apphosts.length; i++) {
+                        const label = self.apphosts[i];
+                        const lastLine = label in self.lastLine ? self.lastLine[label] : 0;
+                        getData(`/api/schedule/lines?label=${label}&after=${lastLine}`)
+                            .then(function (r) {
+                                self.lastLine[label] = r.lastId;
+                                self.lines[label] = label in self.lines ? self.lines[label].concat(r.lines) : r.lines;
+                                getData(`/api/schedule/running?label=${label}`)
+                                    .then(r => self.running[label] = r)
+                                    .then(_ => self.$forceUpdate());
+                            })
+                            .catch(notifyError);
+                    }
+                },
+                add: function () {
+                    const self = this;
+                    if (self.addModel.Label.trim() === '') {
+                        document.getElementById('add-model-label').focus();
+                        return;
+                    }
+                    if (self.addModel.Program.trim() === '') {
+                        document.getElementById('add-model-program').focus();
+                        return;
+                    }
+
+                    postData('/api/schedule/add', self.addModel)
+                        .then(notAnExecption)
+                        .then(function () { self.addModel = null; self.periodicCheck(); })
+                        .catch(console.log);
+
+                    self.addModel = "Sending...";
+                },
+                trigger: function () {
+                    const self = this;
+                    const label = self.selected;
+                    getData(`/api/schedule/trigger?label=${label}`)
+                        .then(notAnExecption)
+                        .then(x => self.periodicCheck())
+                        .catch(notifyError);
+                },
+                erase: function () {
+                    const self = this;
+                    const label = self.selected;
+                    getData(`/api/schedule/erase?label=${label}`)
+                        .then(notAnExecption)
+                        .then(function() { self.lines[label] = []; self.$forceUpdate(); })
+                        .catch(notifyError);
+                }
             },
-            mounted: function () {
+            mounted: async function () {
+                const self = this;
+                self.apphosts = await getData('/api/schedule/apps');
+
+                self.periodicCheck();
+                setInterval(function () { self.periodicCheck(); }, 10000);
             }
         });
     </script>
