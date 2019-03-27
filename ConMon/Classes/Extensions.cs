@@ -1,5 +1,7 @@
 ﻿using Hangfire.Storage;
+using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Diagnostics;
@@ -42,11 +44,11 @@ namespace System
     {
         public static SqlCommand CreateCommand(this SqlConnection connection, string commandText, Dictionary<string, object> parameters = null)
         {
-             if (connection.State != Data.ConnectionState.Open) connection.Open();
+            if (connection.State != Data.ConnectionState.Open) connection.Open();
             var cmd = connection.CreateCommand();
             cmd.CommandText = commandText;
             if (parameters != null)
-                foreach(var x in parameters)
+                foreach (var x in parameters)
                 {
                     var param = cmd.CreateParameter();
                     param.ParameterName = x.Key;
@@ -77,9 +79,9 @@ namespace System
             var ret = new List<string>();
 
             using (command)
-                using (var reader = command.ExecuteReader())
-                    while (reader.Read())
-                        ret.Add(reader.GetValue(0).ToString());
+            using (var reader = command.ExecuteReader())
+                while (reader.Read())
+                    ret.Add(reader.GetValue(0).ToString());
 
             return ret;
         }
@@ -89,12 +91,12 @@ namespace System
             var ret = new List<(T1, T2)>();
 
             using (command)
-                using (var reader = command.ExecuteReader())
-                    while (reader.Read())
-                        ret.Add((
-                            (T1)reader.GetValue(0),
-                            (T2)reader.GetValue(1)
-                            ));
+            using (var reader = command.ExecuteReader())
+                while (reader.Read())
+                    ret.Add((
+                        (T1)reader.GetValue(0),
+                        (T2)reader.GetValue(1)
+                        ));
 
             return ret;
         }
@@ -103,6 +105,25 @@ namespace System
         public static void RunAndClose(this SqlCommand command)
         {
             using (command) command.ExecuteNonQuery();
+        }
+    }
+}
+
+namespace ConMon.Controllers
+{
+    public static class ControllerExtensions
+    {
+        public static ActionResult<object> Attempt(Action action)
+        {
+            try
+            {
+                action();
+                return true;
+            }
+            catch (Exception e)
+            {
+                return e;
+            }
         }
     }
 }

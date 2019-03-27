@@ -9,6 +9,7 @@ using System.Threading;
 using ConMon.Services;
 using System.Data.SqlClient;
 using Hangfire.Storage;
+using static ConMon.Controllers.ControllerExtensions;
 
 namespace ConMon.Controllers
 {
@@ -16,21 +17,17 @@ namespace ConMon.Controllers
     [ApiController]
     public class ScheduleController : ControllerBase
     {
-
-        public ActionResult<object> Add([FromBody] Models.ScheduleAddRequest request)
+        private void AddToSchedule(Models.ScheduleAddRequest request)
         {
-            try
-            {
-                RecurringJob.AddOrUpdate(request.Label, () => ApplicationService.FromRequest(request).Start(null), request.Cron);
-                RecurringJob.Trigger(request.Label);
-
-                return true;
-            }
-            catch(Exception e)
-            {
-                return e;
-            }
+            RecurringJob.AddOrUpdate(request.Label, () => ApplicationService.FromRequest(request).Start(null), request.Cron);
+            RecurringJob.Trigger(request.Label);
         }
+
+        public ActionResult<object> Add([FromBody] Models.ScheduleAddRequest request) =>
+            Attempt(() => AddToSchedule(request));
+
+        public ActionResult<object> AddMany([FromBody] IEnumerable<Models.ScheduleAddRequest> requests) =>
+            Attempt(() => { foreach (var request in requests) AddToSchedule(request); });
 
         public ActionResult<IEnumerable<string>> Apps() =>
             new ActionResult<IEnumerable<string>>(JobStorage.Current.GetConnection().GetRecurringJobs().Select(x => x.Id));
@@ -46,31 +43,11 @@ namespace ConMon.Controllers
             }
         }
 
-        public ActionResult<object> Trigger(string label)
-        {
-            try
-            {
-                RecurringJob.Trigger(label);
-                return true;
-            }
-            catch (Exception e)
-            {
-                return e;
-            }
-        }
+        public ActionResult<object> Trigger(string label) =>
+            Attempt(() => RecurringJob.Trigger(label));
 
-        public ActionResult<object> Erase(string label)
-        {
-            try
-            {
-                new ApplicationService(label).BufferClear();
-                return true;
-            }
-            catch (Exception e)
-            {
-                return e;
-            }
-        }
+        public ActionResult<object> Erase(string label) =>
+            Attempt(() => new ApplicationService(label).BufferClear());
 
         public ActionResult<Models.ScheduleLinesResult> Lines(string label, int after = 0) =>
             Models.ScheduleLinesResult.FromTuple(new ApplicationService(label).BufferGet(after));
