@@ -5,6 +5,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="compilerconfig.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="compilerconfig.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Hangfire" Version="1.6.23" />
     <PackageReference Include="Hangfire.SqlServer" Version="1.6.23" />
     <PackageReference Include="Microsoft.AspNetCore.App" />
