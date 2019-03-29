@@ -1,14 +1,10 @@
-﻿using System;
+﻿using ConMon.Services;
+using Hangfire;
+using Hangfire.Storage;
+using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Hangfire;
-using System.Threading;
-using ConMon.Services;
-using System.Data.SqlClient;
-using Hangfire.Storage;
 using static ConMon.Controllers.ControllerExtensions;
 
 namespace ConMon.Controllers
