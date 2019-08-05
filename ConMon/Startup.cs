@@ -1,4 +1,5 @@
-﻿using Hangfire;
+﻿using ConMon.Services;
+using Hangfire;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -38,6 +39,12 @@ namespace ConMon
             {
                 app.UseHsts();
             }
+
+            ApplicationService.RunAsDomain = Configuration.GetSection("RunAs").GetValue<string>("Domain") ?? "";
+            ApplicationService.RunAsUser = Configuration.GetSection("RunAs").GetValue<string>("User");
+            ApplicationService.RunAsPass = Configuration.GetSection("RunAs").GetValue<string>("Pass");
+
+            Controllers.ScheduleController.ProgramAliases = Classes.ProgramAlias.Config(Configuration);
 
             app.UseHangfireServer();
             app.UseHangfireDashboard(options: new DashboardOptions

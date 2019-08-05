@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,17 +25,27 @@ namespace ConMon.Services
         public static string ConnectionString { get; set; }
         private string InstanceConnectionString = null;
 
+        public static string RunAsDomain = "";
+        public static string RunAsUser = null;
+        public static string RunAsPass = null;
 
         private int Id { get; set; } = -1;
         public string Label { get; private set; }
         public string Cron { get; set; } = "*/10 * * * *";
 
-        public string Program { get; set; }
-        public string Arguments { get; set; } = "";
+        string _Program, _Arguments = "", _WorkingDirectory;
+        public string Program
+        {
+            get => _Program;
+            set { _Program = value; if (_Program.Contains("::last::")) _Program = ResolveTokenLast(_Program); }
+        }
+        public string Arguments
+        {
+            get => _Arguments;
+            set { _Arguments = value; if (_Program.Contains("::last::")) _Program = ResolveTokenLast(_Program); }
+        }
         public string WorkingDirectory { get; set; }
 
-        private Process process = null;
-        public bool Running => process?.IsRunning() ?? false;
         private bool Initialized = false;
 
 
@@ -58,15 +70,16 @@ namespace ConMon.Services
 
         public static ApplicationService FromRequest(Models.ScheduleAddRequest request)
         {
-            var a = new ApplicationService(request.Label, null);
+            var service = new ApplicationService(request.Label, null)
+            {
+                Program = request.Program,
+                Arguments = request.Arguments,
+                WorkingDirectory = request.WorkingDirectory,
+                Cron = request.Cron
+            };
 
-            a.Program = request.Program;
-            a.Arguments = request.Arguments;
-            a.WorkingDirectory = request.WorkingDirectory;
-            a.Cron = request.Cron;
-            a.SaveToDatabase();
-
-            return a;
+            service.SaveToDatabase();
+            return service;
         }
 
         public ApplicationService() { InstanceConnectionString = ConnectionString; }
@@ -107,7 +120,18 @@ namespace ConMon.Services
         }
 
 
-        private void BufferAdd(object sender, DataReceivedEventArgs e) { BufferAdd(e.Data); }
+        private void BufferAdd(object sender, DataReceivedEventArgs e)
+        {
+            try
+            {
+                BufferAdd(e.Data);
+            }
+            catch (Exception ex)
+            {
+                BufferAdd(ex.ToString());
+            }
+        }
+
         private void BufferAdd(string line)
         {
             if (line is null) line = string.Empty;
@@ -137,30 +161,80 @@ namespace ConMon.Services
             StartAsync(new CancellationToken(false)).Wait();
         }
 
+        public static string ResolveTokenLast(string input)
+        {
+            const string pattern = @"<([^<]*::last::[^<]*)>";
+            var parts = Regex.Match(input, pattern).Groups[1].Value
+                .Split(new [] { "::last::" }, StringSplitOptions.None);
+            while (string.IsNullOrWhiteSpace(parts.Last()))
+                parts = parts.Take(parts.Length - 1).ToArray();
+
+            var targets = Directory.GetDirectories(parts[0]);
+            if (parts.Length == 2 && !parts[1].Contains("\\"))
+                targets = targets.Concat(Directory.GetFiles(parts[0])).ToArray();
+            var selected = targets.Last();
+
+            var result = parts.Length == 1 ? selected :
+                parts.Length == 2 ? selected + parts[1] :
+                ResolveTokenLast(selected + string.Join("::last::", parts.Skip(1)));
+
+            return Regex.Replace(input, pattern, result);
+        }
+
         public Task StartAsync() => StartAsync(new CancellationToken(false));
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            BufferAdd($"Starting {Program} {Arguments} ({WorkingDirectory ?? "."})");
+            bool hasDirectory = !string.IsNullOrWhiteSpace(WorkingDirectory);
+            string user = string.IsNullOrWhiteSpace(RunAsUser) ? Environment.UserName : RunAsUser;
+            BufferAdd($"Starting {Program} {Arguments} ({user} @ {(hasDirectory ? WorkingDirectory : ".")})");
 
-            var process = new Process();
-            process.StartInfo.FileName = Program;
-            process.StartInfo.Arguments = Arguments;
-            if (WorkingDirectory != null) process.StartInfo.WorkingDirectory = WorkingDirectory;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.OutputDataReceived += BufferAdd;
-
-            if (!process.StartInfo.FileName.Contains("\\") && !process.StartInfo.FileName.Contains("/"))
-                process.StartInfo.FileName = System.IO.Path.Combine(
-                    WorkingDirectory ?? Environment.CurrentDirectory, process.StartInfo.FileName);
-
-            if (!cancellationToken.IsCancellationRequested)
+            var process = new Process()
             {
-                process.Start();
-                process.BeginOutputReadLine();
-                await Task.Run(() => { process.WaitForExit(); }, cancellationToken);
-                process.Close();
+                StartInfo = new ProcessStartInfo(Program, Arguments)
+                {
+                    WorkingDirectory = hasDirectory ? WorkingDirectory : "",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                }
+            };
+
+            if (RunAsUser != null && RunAsPass != null)
+            {
+                //var password = new System.Security.SecureString();
+                //foreach (var c in RunAsPass) password.AppendChar(c);
+
+                process.StartInfo.Domain = RunAsDomain;
+                process.StartInfo.UserName = RunAsUser;
+                process.StartInfo.PasswordInClearText = RunAsPass;
+                process.StartInfo.Verb = "runas";
+            }
+
+            process.OutputDataReceived += BufferAdd;
+            process.ErrorDataReceived += BufferAdd;
+
+            try
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    await Task.Run(() => { process.WaitForExit(); }, cancellationToken);
+
+                    while (!process.HasExited)
+                    {
+                        string line = process.StandardOutput.ReadLine() ?? process.StandardError.ReadLine();
+                        if (line != null) BufferAdd(line); else break;
+                    }
+
+                    process.Close();
+                }
+            }
+            catch (Exception e)
+            {
+                BufferAdd(e.ToString());
             }
 
             process = null;

@@ -1,4 +1,5 @@
-﻿using ConMon.Services;
+﻿using ConMon.Classes;
+using ConMon.Services;
 using Hangfire;
 using Hangfire.Storage;
 using Microsoft.AspNetCore.Mvc;
@@ -13,8 +14,20 @@ namespace ConMon.Controllers
     [ApiController]
     public class ScheduleController : ControllerBase
     {
+        public static Dictionary<string, ProgramAlias> ProgramAliases;
+
         private void AddToSchedule(Models.ScheduleAddRequest request)
         {
+            if (string.IsNullOrWhiteSpace(request.Program))
+            {
+                request.Program = @"c:\Windows\System32\cmd.exe";
+                string args = request.Arguments.TrimStart();
+                if (!args.StartsWith("/C") && !args.StartsWith("/K"))
+                    request.Arguments = $"/C {request.Arguments.Trim()}";
+            }
+            else if (ProgramAliases.ContainsKey(request.Program.Trim()))
+                request.ApplyAlias(ProgramAliases[request.Program.Trim()]);
+
             RecurringJob.AddOrUpdate(request.Label, () => ApplicationService.FromRequest(request).Start(null), request.Cron);
             RecurringJob.Trigger(request.Label);
         }
