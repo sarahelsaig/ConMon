@@ -39,7 +39,6 @@ const app = new Vue({
         running: {}
     },
     methods: {
-        now: () => moment(),
         periodicCheck: function () {
             const self = this;
             for (let i = 0; i < self.apphosts.length; i++) {
@@ -102,6 +101,14 @@ const app = new Vue({
                 .catch(notifyError);
         },
         navigateTo: url => location.href = url,
+        cronstrue: function (str) {
+            try {
+                return cronstrue.toString(str);
+            }
+            catch (e) {
+                return '???';
+            }
+        },
     },
     mounted: async function () {
         const self = this;

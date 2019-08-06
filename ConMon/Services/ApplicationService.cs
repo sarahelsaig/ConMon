@@ -42,9 +42,13 @@ namespace ConMon.Services
         public string Arguments
         {
             get => _Arguments;
-            set { _Arguments = value; if (_Program.Contains("::last::")) _Program = ResolveTokenLast(_Program); }
+            set { _Arguments = value; if (_Arguments.Contains("::last::")) _Arguments = ResolveTokenLast(_Arguments); }
         }
-        public string WorkingDirectory { get; set; }
+        public string WorkingDirectory
+        {
+            get => _WorkingDirectory;
+            set { _WorkingDirectory = value; if (_WorkingDirectory.Contains("::last::")) _WorkingDirectory = ResolveTokenLast(_WorkingDirectory); }
+        }
 
         private bool Initialized = false;
 

@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <title>ConMon!</title>
     <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
-    <script src="https://momentjs.com/downloads/moment.js"></script>
+    <script src="https://unpkg.com/cronstrue@1.48.0/dist/cronstrue.min.js" async></script>
     <link rel="stylesheet" href="/site.min.css" />
 </head>
 <body>
     <div id="app">
         <header>
             <ul class="menu">
-                <li><button @click="addModel = { Program: '', Arguments: '', WorkingDirectory: '', Label: '', Cron: '*/10 * * * *' }">Add</button></li>
+                <li><button @click="addModel = { Program: '', Arguments: '', WorkingDirectory: '', Label: '', Cron: '0 2 * * *' }">Add</button></li>
                 <li><button :disabled="selected === null || running[selected]" @click="trigger">Launch</button></li>
                 <li><button :disabled="selected === null" @click="erase">Erase Lines</button></li>
                 <li><button @click="navigateTo('/hangfire')">Dashboard</button></li>
@@ -44,6 +44,7 @@
                         <div>
                             <div>Cron Expression</div>
                             <input v-model="addModel.Cron" />
+                            <div style="font-style: italic">{{ cronstrue(addModel.Cron) }}</div>
                         </div>
                     </template>
                     <textarea v-else style="width: 141px; height: 191.5px" v-model="addModelBatch"></textarea>
