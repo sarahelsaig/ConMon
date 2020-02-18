@@ -10,6 +10,13 @@ namespace ConMon
 {
     public class Startup
     {
+        public static bool IsDebug { get; } =
+#if DEBUG
+            true;
+#else
+            false;
+#endif
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
@@ -25,13 +32,13 @@ namespace ConMon
             services.AddHangfire(configuration => {
                 configuration.UseSqlServerStorage(schedulerConnectionString);
             });
-            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_3_0);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            if (env.IsDevelopment())
+            if (IsDebug)
             {
                 app.UseDeveloperExceptionPage();
             }
