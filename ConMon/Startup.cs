@@ -29,14 +29,15 @@ namespace ConMon
         {
             var schedulerConnectionString = Configuration.GetConnectionString("Scheduler");
             Services.ApplicationService.ConnectionString = schedulerConnectionString;
-            services.AddHangfire(configuration => {
+            services.AddHangfire(configuration =>
+            {
                 configuration.UseSqlServerStorage(schedulerConnectionString);
             });
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_3_0);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app)
         {
             if (IsDebug)
             {
@@ -61,7 +62,14 @@ namespace ConMon
             });
 
             app.UseHttpsRedirection();
-            app.UseMvc();
+            app.UseRouting();
+            app.UseEndpoints(endpoints => 
+            {
+                endpoints.MapControllers();
+                //endpoints.MapRazorPages();
+                //endpoints.MapHub<MyChatHub>();
+                //endpoints.MapGrpcService<MyCalculatorService>();
+            });
             app.UseDefaultFiles();
             app.UseStaticFiles();
         }
