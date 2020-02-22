@@ -67,10 +67,6 @@ const app = new Vue({
                     document.getElementById('add-model-label').focus();
                     return;
                 }
-                if (self.addModel.Program.trim() === '') {
-                    document.getElementById('add-model-program').focus();
-                    return;
-                }
             }
             else {
                 try { model = JSON.parse(self.addModelBatch); }

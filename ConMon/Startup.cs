@@ -1,10 +1,16 @@
-﻿using ConMon.Services;
+﻿using ConMon.Classes;
+using ConMon.Models;
+using ConMon.Models.Scheduler;
+using ConMon.Services;
 using Hangfire;
+using Hangfire.MySql.Core;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Transactions;
 
 namespace ConMon
 {
@@ -28,10 +34,27 @@ namespace ConMon
         public void ConfigureServices(IServiceCollection services)
         {
             var schedulerConnectionString = Configuration.GetConnectionString("Scheduler");
-            Services.ApplicationService.ConnectionString = schedulerConnectionString;
-            services.AddHangfire(configuration =>
+
+            services.AddSingleton(Configuration);
+            services.AddSingleton(ProgramAlias.DictionaryFromConfiguration(Configuration));
+            services.AddScoped<IApplicationService, ApplicationService>();
+            services.AddScoped<IRunAs, RunAs>();
+            services.AddHangfire(configuration => {
+                switch (Configuration.GetConnectionType())
+                {
+                    case ConnectionType.SqlServer: configuration.UseSqlServerStorage(schedulerConnectionString); break;
+                    case ConnectionType.MySql: configuration.UseStorage(new MySqlStorage(schedulerConnectionString)); break;
+                    case ConnectionType unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
+                }
+            });
+            services.AddDbContext<SchedulerContext>(options =>
             {
-                configuration.UseSqlServerStorage(schedulerConnectionString);
+                switch (Configuration.GetConnectionType())
+                {
+                    case ConnectionType.SqlServer: options.UseSqlServer(schedulerConnectionString); break;
+                    case ConnectionType.MySql: options.UseMySql(schedulerConnectionString); break;
+                    case ConnectionType unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
+                }
             });
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_3_0);
         }
@@ -47,12 +70,6 @@ namespace ConMon
             {
                 app.UseHsts();
             }
-
-            ApplicationService.RunAsDomain = Configuration.GetSection("RunAs").GetValue<string>("Domain") ?? "";
-            ApplicationService.RunAsUser = Configuration.GetSection("RunAs").GetValue<string>("User");
-            ApplicationService.RunAsPass = Configuration.GetSection("RunAs").GetValue<string>("Pass");
-
-            Controllers.ScheduleController.ProgramAliases = Classes.ProgramAlias.Config(Configuration);
 
             app.UseHangfireServer();
             app.UseHangfireDashboard(options: new DashboardOptions
@@ -72,6 +89,12 @@ namespace ConMon
             });
             app.UseDefaultFiles();
             app.UseStaticFiles();
+
+            using (var scope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope())
+            using (var context = scope.ServiceProvider.GetService<SchedulerContext>())
+            {
+                context.Database.Migrate();
+            }
         }
     }
 }

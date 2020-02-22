@@ -1,4 +1,5 @@
-﻿using Hangfire.Storage;
+﻿using ConMon.Classes;
+using Hangfire.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using System;
@@ -6,6 +7,7 @@ using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace System
 {
@@ -62,15 +64,16 @@ namespace System
         {
             using (command)
             {
-                using (var reader = command.ExecuteReader())
-                    if (reader.Read())
-                    {
-                        var ret = new object[reader.FieldCount];
-                        reader.GetValues(ret);
-                        return ret.Select(x => x.ToString()).ToArray();
-                    }
-                    else
-                        return null;
+                using var reader = command.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    var ret = new object[reader.FieldCount];
+                    reader.GetValues(ret);
+                    return ret.Select(x => x.ToString()).ToArray();
+                }
+                else
+                    return null;
             }
         }
 
@@ -124,6 +127,30 @@ namespace ConMon.Controllers
             {
                 return e;
             }
+        }
+        public static async Task<ActionResult<object>> AttemptAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+                return true;
+            }
+            catch (Exception e)
+            {
+                return e;
+            }
+        }
+    }
+}
+
+namespace Microsoft.Extensions.Configuration
+{
+    public static class ConMonConfigurationExtensions
+    {
+        public static ConnectionType GetConnectionType(this IConfiguration config)
+        {
+            string type = config.GetValue(nameof(ConnectionType), nameof(ConnectionType.SqlServer));
+            return Enum.Parse<ConnectionType>(type, true);
         }
     }
 }

@@ -1,4 +1,7 @@
-﻿using Hangfire.Server;
+﻿using ConMon.Models;
+using ConMon.Models.Scheduler;
+using Hangfire.Server;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -11,165 +14,148 @@ using System.Threading.Tasks;
 
 namespace ConMon.Services
 {
-    public class ApplicationService
+    public class ApplicationService : IApplicationService
     {
-        public const string SqlFindLabels = "select Label from Application";
-        public const string SqlFindByLabel = "select Id,Cron,Program,Arguments,WorkingDirectory from Application where Label = @Label";
-        public const string SqlCreateFromLabel = "insert into Application(Label,Cron,Program,Arguments,WorkingDirectory) values(@Label, '*/10 * * * *', NULL, '', NULL)";
-        public const string SqlUpdate = "update Application set Cron=@Cron,Program=@Program,Arguments=@Arguments,WorkingDirectory=@WorkingDirectory where Id = @Id";
-        public const string SqlLines = "select top 1000 Id, Line from ApplicationLine where ApplicationId = @Id and Id > @after order by Id desc";
-        public const string SqlUpdateLines = "insert into ApplicationLine(ApplicationId, Line) values(@Id, @line)";
-        public const string SqlDeleteLines = "delete from ApplicationLine where ApplicationId = @Id";
+        private readonly SchedulerContext _db;
+        private readonly IRunAs _runas;
 
-
-        public static string ConnectionString { get; set; }
-        private string InstanceConnectionString = null;
-
-        public static string RunAsDomain = "";
-        public static string RunAsUser = null;
-        public static string RunAsPass = null;
-
-        private int Id { get; set; } = -1;
-        public string Label { get; private set; }
-        public string Cron { get; set; } = "*/10 * * * *";
-
-        string _Program, _Arguments = "", _WorkingDirectory;
-        public string Program
+        public ApplicationService(SchedulerContext db, IRunAs runas)
         {
-            get => _Program;
-            set { _Program = value; if (_Program.Contains("::last::")) _Program = ResolveTokenLast(_Program); }
-        }
-        public string Arguments
-        {
-            get => _Arguments;
-            set { _Arguments = value; if (_Arguments.Contains("::last::")) _Arguments = ResolveTokenLast(_Arguments); }
-        }
-        public string WorkingDirectory
-        {
-            get => _WorkingDirectory;
-            set { _WorkingDirectory = value; if (_WorkingDirectory.Contains("::last::")) _WorkingDirectory = ResolveTokenLast(_WorkingDirectory); }
+            _db = db;
+            _runas = runas;
         }
 
-        private bool Initialized = false;
+        #region database manipulation
+        Application FindByLabel(string label) => _db.Applications.SingleOrDefault(x => x.Label == label);
+        int FindIdByLabel(string label) => _db.Applications.Where(x => x.Label == label).Select(x => x.Id).SingleOrDefault();
+        IQueryable<ApplicationLine> GetLines(int id, int after = -1) => _db.ApplicationLines.Where(x => x.ApplicationId == id && x.Id > after).OrderBy(x => x.Id).Take(1000);
+        void AddLine(int id, string line) => _db.ApplicationLines.Add(new ApplicationLine { ApplicationId = id, Line = line });
+        void ClearLines(int id) => _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
+        #endregion
 
-
-        private Dictionary<string, object> LabelAsParams => new Dictionary<string, object> { { nameof(Label), Label } };
-        private Dictionary<string, object> Params(params object[] data)
+        private void ValidString(string text, string name)
         {
-            var ret = new Dictionary<string, object>();
-            for (int i = 0; i < data.Length; i += 2)
-                ret[data[i].ToString()] = data[i + 1];
-            return ret;
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentNullException(name);
         }
 
-
-        public static List<ApplicationService> GetServices(string connectionString = null)
+        #region public API
+        public void BufferClear(string label)
         {
-            using (var connection = new SqlConnection(connectionString ?? ConnectionString))
-                return connection.CreateCommand(SqlFindLabels)
-                    .ReadScalarsAndClose()
-                    .Select(label => new ApplicationService(label, ConnectionString))
-                    .ToList();
+            ValidString(label, nameof(label));
+            ClearLines(FindIdByLabel(label));
+            _db.SaveChanges();
         }
 
-        public static ApplicationService FromRequest(Models.ScheduleAddRequest request)
+        public (int, IEnumerable<string>) BufferGet(string label, int after = -1)
         {
-            var service = new ApplicationService(request.Label, null)
+            ValidString(label, nameof(label));
+            var ret = GetLines(FindIdByLabel(label), after).Select(x => new { x.Id, x.Line }).ToList();
+            return ret.Count > 0 ? (ret.Max(x => x.Id), ret.Select(x => x.Line)) : (after, Array.Empty<string>());
+        }
+
+        public async Task CreateAsync(ScheduleAddRequest request, CancellationToken? optionalCancellationToken)
+        {
+            ValidString(request.Label, "request.Label");
+            var cancellationToken = optionalCancellationToken ?? new CancellationToken(false);
+
+            var application = FindByLabel(request.Label);
+            if (application is null)
             {
-                Program = request.Program,
-                Arguments = request.Arguments,
-                WorkingDirectory = request.WorkingDirectory,
-                Cron = request.Cron
-            };
-
-            service.SaveToDatabase();
-            return service;
-        }
-
-        public ApplicationService() { InstanceConnectionString = ConnectionString; }
-        public ApplicationService(string label, string connectionString = null) : this() { Initialize(label, connectionString); }
-
-        public void Initialize(string label, string connectionString = null)
-        {
-            Label = label;
-            InstanceConnectionString = connectionString ?? ConnectionString;
-            using (var connection = new SqlConnection(InstanceConnectionString))
-                while (Id < 0)
+                application = new Application
                 {
-                    var row = connection.CreateCommand(SqlFindByLabel, LabelAsParams).ReadLineAndClose();
-                    if (row is null)
-                        using (var cmd = connection.CreateCommand(SqlCreateFromLabel, LabelAsParams)) cmd.ExecuteNonQuery();
-                    else
-                    {
-                        Id = int.Parse(row[0]);
-                        Cron = row[1];
-                        Program = row[2];
-                        Arguments = row[3];
-                        WorkingDirectory = row[4];
-                    }
-                }
-            Initialized = true;
+                    Label = request.Label,
+                    Program = request.Program,
+                    Arguments = request.Arguments ?? "",
+                    WorkingDirectory = request.WorkingDirectory,
+                };
+                if (!string.IsNullOrWhiteSpace(request.Cron)) application.Cron = request.Cron;
+                _db.Applications.Add(application);
+            }
+            else
+            {
+                application.Label = request.Label;
+                application.Program = request.Program;
+                application.Arguments = request.Arguments ?? "";
+                application.WorkingDirectory = request.WorkingDirectory;
+                if (!string.IsNullOrWhiteSpace(request.Cron)) application.Cron = request.Cron;
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
         }
 
-        public void SaveToDatabase()
+        public async Task StartAsync(string label, CancellationToken? optionalCancellationToken)
         {
-            using (var connection = new SqlConnection(InstanceConnectionString))
-                connection.CreateCommand(SqlUpdate, Params(
-                    nameof(Id), Id,
-                    nameof(Cron), Cron,
-                    nameof(Program), Program,
-                    nameof(Arguments), Arguments,
-                    nameof(WorkingDirectory), WorkingDirectory))
-                    .RunAndClose();
-        }
+            ValidString(label, nameof(label));
+            var cancellationToken = optionalCancellationToken ?? new CancellationToken(false);
+            
+            var application = FindByLabel(label);
+            var id = application.Id;
+
+            // Log start
+            bool hasDirectory = !string.IsNullOrWhiteSpace(application.WorkingDirectory);
+            AddLine(id, $"Starting {application.Program} {application.Arguments} " +
+                $"({_runas?.User ?? Environment.UserName} @ {(hasDirectory ? application.WorkingDirectory : ".")})");
 
 
-        private void BufferAdd(object sender, DataReceivedEventArgs e)
-        {
+            var process = CreateProcess(application, hasDirectory ? application.WorkingDirectory : Environment.CurrentDirectory);
+
+            if (!string.IsNullOrWhiteSpace(_runas?.User))
+            {
+                //var password = new System.Security.SecureString();
+                //foreach (var c in RunAsPass) password.AppendChar(c);
+
+                process.StartInfo.Domain = _runas.Domain;
+                process.StartInfo.UserName = _runas.User;
+                process.StartInfo.PasswordInClearText = _runas.Pass;
+                process.StartInfo.Verb = "runas";
+            }
+
+            process.OutputDataReceived += (o, e) => BufferAdd(id, e);
+            process.ErrorDataReceived += (o, e) => BufferAdd(id, e);
+
             try
             {
-                BufferAdd(e.Data);
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    await Task.Run(() => { process.WaitForExit(); }, cancellationToken);
+
+                    while (!process.HasExited)
+                    {
+                        string line = process.StandardOutput.ReadLine() ?? process.StandardError.ReadLine();
+                        if (line != null) AddLine(id, line ?? ""); else break;
+                        await _db.SaveChangesAsync(cancellationToken);
+                    }
+
+                    process.Close();
+                }
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                BufferAdd(ex.ToString());
+                AddLine(id, e.ToString());
             }
-        }
 
-        private void BufferAdd(string line)
+            await _db.SaveChangesAsync(cancellationToken);
+            process = null;
+        }
+        #endregion
+
+        #region Auxiliary functions
+        private static string ResolveToken(string txt)
         {
-            if (line is null) line = string.Empty;
-            using (var connection = new SqlConnection(InstanceConnectionString))
-                connection.CreateCommand(SqlUpdateLines, Params(nameof(Id), Id, nameof(line), line)).RunAndClose();
+            if (txt?.Contains("::last::") == true)
+                txt = ResolveTokenLast(txt);
+
+            return txt;
         }
 
-        public (int, IEnumerable<string>) BufferGet(int after)
-        {
-            using (var connection = new SqlConnection(InstanceConnectionString))
-            {
-                var ret = connection.CreateCommand(SqlLines, Params(nameof(Id), Id, nameof(after), after)).ReadTupleAndClose<int, string>();
-                return ret.Count > 0 ? (ret.Max(x => x.Item1), ret.OrderBy(x => x.Item1).Select(x => x.Item2)) : (after, new string[0]);
-            }
-        }
-
-        public void BufferClear()
-        {
-            using (var connection = new SqlConnection(InstanceConnectionString))
-                connection.CreateCommand(SqlDeleteLines, Params(nameof(Id), Id)).RunAndClose();
-        }
-
-        public void Start(PerformContext context)
-        {
-            if (!Initialized)
-                Initialize(context.Connection.GetRecurringJobName(context.BackgroundJob.Id));
-            StartAsync(new CancellationToken(false)).Wait();
-        }
-
-        public static string ResolveTokenLast(string input)
+        private static string ResolveTokenLast(string input)
         {
             const string pattern = @"<([^<]*::last::[^<]*)>";
             var parts = Regex.Match(input, pattern).Groups[1].Value
-                .Split(new [] { "::last::" }, StringSplitOptions.None);
+                .Split(new[] { "::last::" }, StringSplitOptions.None);
             while (string.IsNullOrWhiteSpace(parts.Last()))
                 parts = parts.Take(parts.Length - 1).ToArray();
 
@@ -185,18 +171,12 @@ namespace ConMon.Services
             return Regex.Replace(input, pattern, result);
         }
 
-        public Task StartAsync() => StartAsync(new CancellationToken(false));
-        public async Task StartAsync(CancellationToken cancellationToken)
-        {
-            bool hasDirectory = !string.IsNullOrWhiteSpace(WorkingDirectory);
-            string user = string.IsNullOrWhiteSpace(RunAsUser) ? Environment.UserName : RunAsUser;
-            BufferAdd($"Starting {Program} {Arguments} ({user} @ {(hasDirectory ? WorkingDirectory : ".")})");
-
-            var process = new Process()
+        private Process CreateProcess(Application application, string actualWorkingDirectory) =>
+            new Process()
             {
-                StartInfo = new ProcessStartInfo(Program, Arguments)
+                StartInfo = new ProcessStartInfo(ResolveToken(application.Program), ResolveToken(application.Arguments))
                 {
-                    WorkingDirectory = hasDirectory ? WorkingDirectory : "",
+                    WorkingDirectory = ResolveToken(actualWorkingDirectory),
                     CreateNoWindow = true,
                     UseShellExecute = false,
                     RedirectStandardInput = true,
@@ -205,43 +185,17 @@ namespace ConMon.Services
                 }
             };
 
-            if (RunAsUser != null && RunAsPass != null)
-            {
-                //var password = new System.Security.SecureString();
-                //foreach (var c in RunAsPass) password.AppendChar(c);
-
-                process.StartInfo.Domain = RunAsDomain;
-                process.StartInfo.UserName = RunAsUser;
-                process.StartInfo.PasswordInClearText = RunAsPass;
-                process.StartInfo.Verb = "runas";
-            }
-
-            process.OutputDataReceived += BufferAdd;
-            process.ErrorDataReceived += BufferAdd;
-
+        private void BufferAdd(int id, DataReceivedEventArgs e)
+        {
             try
             {
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    process.Start();
-                    process.BeginOutputReadLine();
-                    await Task.Run(() => { process.WaitForExit(); }, cancellationToken);
-
-                    while (!process.HasExited)
-                    {
-                        string line = process.StandardOutput.ReadLine() ?? process.StandardError.ReadLine();
-                        if (line != null) BufferAdd(line); else break;
-                    }
-
-                    process.Close();
-                }
+                AddLine(id, string.IsNullOrWhiteSpace(e.Data) ? "" : e.Data);
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                BufferAdd(e.ToString());
+                AddLine(id, ex.ToString());
             }
-
-            process = null;
         }
+        #endregion
     }
 }

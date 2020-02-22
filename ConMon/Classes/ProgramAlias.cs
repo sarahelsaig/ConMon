@@ -20,7 +20,7 @@ namespace ConMon.Classes
             WorkingDirectory = section.GetValue<string>(nameof(WorkingDirectory), null);
         }
 
-        public static Dictionary<string, ProgramAlias> Config(IConfiguration configuration) =>
-            configuration.GetSection("ProgramAlias").GetChildren().ToDictionary(x => x.Key, x => new ProgramAlias(x));
+        public static Dictionary<string, ProgramAlias> DictionaryFromConfiguration(IConfiguration configuration) =>
+            configuration.GetSection(nameof(ProgramAlias)).GetChildren().ToDictionary(x => x.Key, x => new ProgramAlias(x));
     }
 }
