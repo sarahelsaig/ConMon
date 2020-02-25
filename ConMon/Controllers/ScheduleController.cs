@@ -3,6 +3,7 @@ using ConMon.Models.Scheduler;
 using ConMon.Services;
 using Hangfire;
 using Hangfire.Storage;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
@@ -17,6 +18,8 @@ namespace ConMon.Controllers
     [ApiController]
     public class ScheduleController : ControllerBase
     {
+        private static readonly string[] unixShell = new[] { "/bin/sh", "/bin/bash", "/sbin/sh", "/sbin/bash", "/usr/bin/sh", "/usr/bin/bash" };
+
         private readonly IConfiguration _configuration;
         private readonly Dictionary<string, ProgramAlias> _programAliases;
         private readonly IApplicationService _applicationService;
@@ -42,7 +45,9 @@ namespace ConMon.Controllers
                 request.Program = _configuration.GetValue("DefaultApplication", @"c:\Windows\System32\cmd.exe");
                 string args = request.Arguments.TrimStart();
                 if (request.Program.EndsWith("cmd.exe") && !args.StartsWith("/C") && !args.StartsWith("/K"))
-                    request.Arguments = $"/C {request.Arguments.Trim()}";
+                    request.Arguments = $"/C {args.TrimEnd()}";
+                else if (unixShell.Contains(request.Program) && !args.StartsWith("-c"))
+                    request.Arguments = $"-c {args.TrimEnd()}";
             }
             else if (_programAliases.ContainsKey(request.Program.Trim()))
                 request.ApplyAlias(_programAliases[request.Program.Trim()]);
@@ -58,10 +63,10 @@ namespace ConMon.Controllers
         }
 
         #region API
-        public ActionResult<object> Add([FromBody] Models.ScheduleAddRequest request) =>
+        public Task<ActionResult<object>> Add([FromBody] Models.ScheduleAddRequest request) =>
             AttemptAsync(() => AddToSchedule(request));
 
-        public ActionResult<object> AddMany([FromBody] IEnumerable<Models.ScheduleAddRequest> requests) =>
+        public Task<ActionResult<object>> AddMany([FromBody] IEnumerable<Models.ScheduleAddRequest> requests) =>
             AttemptAsync(async () => { foreach (var request in requests) await AddToSchedule(request); });
 
         public ActionResult<IEnumerable<string>> Apps() =>
@@ -85,6 +90,8 @@ namespace ConMon.Controllers
 
         public ActionResult<Models.ScheduleLinesResult> Lines(string label, int after = 0) =>
             Models.ScheduleLinesResult.FromTuple(_applicationService.BufferGet(label, after));
+
+        public ActionResult<string> Ip() => HttpContext.Connection.RemoteIpAddress.ToString();
         #endregion
     }
 }

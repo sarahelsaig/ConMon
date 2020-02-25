@@ -81,7 +81,7 @@ namespace ConMon
             app.UseHangfireDashboard(options: new DashboardOptions
             {
                 AppPath = "/",
-                Authorization = new[] { new Filters.HangfireAuthorizationFilter() },
+                Authorization = new[] { new Filters.HangfireAuthorizationFilter(Configuration) },
             });
 
             app.UseDefaultFiles();
@@ -99,7 +99,8 @@ namespace ConMon
             });
 
             using var scope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope();
-            using (var context = scope.ServiceProvider.GetService<SchedulerContext>()) context.Database.Migrate();
+            using var context = scope.ServiceProvider.GetService<SchedulerContext>();
+            context.Database.Migrate();
         }
     }
 }
