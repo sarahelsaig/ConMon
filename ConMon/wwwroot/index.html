@@ -8,72 +8,7 @@
     <link rel="stylesheet" href="/site.min.css" />
 </head>
 <body>
-    <div id="app">
-        <header>
-            <ul class="menu">
-                <li><button @click="addModel = { Program: '', Arguments: '', WorkingDirectory: '', Label: '', Cron: '0 2 * * *' }">Add</button></li>
-                <li><button :disabled="selected === null || running[selected]" @click="trigger">Launch</button></li>
-                <li><button :disabled="selected === null" @click="erase">Erase Lines</button></li>
-                <li><button @click="navigateTo('/hangfire')">Dashboard</button></li>
-                <li class="space">&nbsp;</li>
-                <li class="title"><h1>ConMon!</h1></li>
-            </ul>
-            <div v-if="addModel !== null" class="add-model">
-                <div v-if="typeof addModel === 'object'">
-                    <div add-model-selector>
-                        <label><input type="radio" value="single" v-model="addModelMode" />Single</label>
-                        <label><input type="radio" value="batch" v-model="addModelMode" />Batch</label>
-                    </div>
-                    <template v-if="addModelMode === 'single'">
-                        <div>
-                            <div>Label</div>
-                            <input id="add-model-label" v-model="addModel.Label" />
-                        </div>
-                        <div>
-                            <div>Program</div>
-                            <input id="add-model-program" v-model="addModel.Program" />
-                        </div>
-                        <div>
-                            <div>Arguments</div>
-                            <input v-model="addModel.Arguments" />
-                        </div>
-                        <div>
-                            <div>Working Directory</div>
-                            <input v-model="addModel.WorkingDirectory" />
-                        </div>
-                        <div>
-                            <div>Cron Expression</div>
-                            <input v-model="addModel.Cron" />
-                            <div style="font-style: italic">{{ cronstrue(addModel.Cron) }}</div>
-                        </div>
-                    </template>
-                    <textarea v-else style="width: 141px; height: 191.5px" v-model="addModelBatch"></textarea>
-                    <div class="add-model-buttons">
-                        <button @click="add">Ok</button>
-                        <button @click="addModel = null">Cancel</button>
-                    </div>
-                </div>
-                <div v-else-if="typeof addModel === 'string'">{{ addModel }}</div>
-            </div>
-        </header>
-        <nav>
-            <ul class="hosts">
-                <li v-for="h in apphosts"
-                    :class="{ host: true, 'host-running' : running[h], 'host-selected' : selected === h }"
-                    @click="selected = h">
-                    {{ running[h] ? '👷' : '⏱️' }} <span>{{ h }}</span>
-                </li>
-            </ul>
-        </nav>
-        <main>
-            <ul v-if="selected !== null">
-                <li v-for="(line, i) in lines[selected]">{{ i.toString().padStart(5, '\xa0') }}: {{ line }}</li>
-            </ul>
-        </main>
-        <footer>
-
-        </footer>
-    </div>
+    <div id="app"></div>
     <script src="/site.bottom.js"></script>
 </body>
 </html>
