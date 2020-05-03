@@ -2,39 +2,47 @@
     <div class="index-app">
         <header>
             <ul class="menu">
-                <li><button @click="displayAdd">Add</button></li>
-                <li><button :disabled="selected === null || running[selected]" @click="trigger">Launch</button></li>
-                <li><button :disabled="selected === null" @click="erase">Erase Lines</button></li>
-                <li><button @click="navigateTo('/hangfire')">Dashboard</button></li>
+                <li>
+                    <button @click="displayAdd">Add</button>
+                </li>
+                <li>
+                    <button :disabled="selected === null || running[selected]" @click="trigger">Launch</button>
+                </li>
+                <li>
+                    <button :disabled="selected === null" @click="erase">Erase Lines</button>
+                </li>
+                <li>
+                    <button @click="navigateTo('/hangfire')">Dashboard</button>
+                </li>
                 <li class="space">&nbsp;</li>
                 <li class="title"><h1>ConMon!</h1></li>
             </ul>
             <div v-if="addModel !== null" class="add-model">
                 <div v-if="typeof addModel === 'object'">
                     <div>
-                        <label><input type="radio" value="single" v-model="addModelMode" />Single</label>
-                        <label><input type="radio" value="batch" v-model="addModelMode" />Batch</label>
+                        <label><input type="radio" value="single" v-model="addModelMode"/>Single</label>
+                        <label><input type="radio" value="batch" v-model="addModelMode"/>Batch</label>
                     </div>
                     <template v-if="addModelMode === 'single'">
                         <div>
                             <label for="add-model-label">Label</label>
-                            <input id="add-model-label" v-model="addModel.Label" />
+                            <input id="add-model-label" v-model="addModel.Label"/>
                         </div>
                         <div>
                             <label for="add-model-program">Program</label>
-                            <input id="add-model-program" v-model="addModel.Program" />
+                            <input id="add-model-program" v-model="addModel.Program"/>
                         </div>
                         <div>
                             <label for="add-model-arguments">Arguments</label>
-                            <input id="add-model-arguments" v-model="addModel.Arguments" />
+                            <input id="add-model-arguments" v-model="addModel.Arguments"/>
                         </div>
                         <div>
                             <label for="add-model-directory">Working Directory</label>
-                            <input id="add-model-directory" v-model="addModel.WorkingDirectory" />
+                            <input id="add-model-directory" v-model="addModel.WorkingDirectory"/>
                         </div>
                         <div>
                             <label for="add-model-cron">Cron Expression</label>
-                            <input id="add-model-cron" v-model="addModel.Cron" />
+                            <input id="add-model-cron" v-model="addModel.Cron"/>
                             <div><i>{{ cronstrue(addModel.Cron) }}</i></div>
                             <button class="wide" @click="showCronEditor = true">Show Editor</button>
                         </div>
@@ -52,7 +60,7 @@
             </div>
             <div v-if="addModel !== null && showCronEditor" class="add-model">
                 <div>
-                    <cron-editor v-model="addModel.Cron" />
+                    <cron-editor v-model="addModel.Cron"/>
                     <button class="wide" @click="showCronEditor = false">Done</button>
                 </div>
             </div>
@@ -75,10 +83,13 @@
         </footer>
     </div>
 </template>
+
 <script>
     import utils from './utils.js';
     import VueCronEditorBuefy from 'vue-cron-editor-buefy';
     import cronstrue from 'cronstrue';
+
+    window.utils = utils;
 
     export default {
         name: 'index-app',
@@ -96,23 +107,39 @@
             };
         },
         methods: {
-            periodicCheck: function () {
+            periodicLineCheck: function () {
                 const self = this;
-                for (let i = 0; i < self.appHosts.length; i++) {
-                    const label = self.appHosts[i];
-                    const lastLine = label in self.lastLine ? self.lastLine[label] : 0;
-                    utils.getData(`/api/schedule/lines?label=${label}&after=${lastLine}`)
-                        .then(function (r) {
-                            self.lastLine[label] = r.lastId;
-                            self.lines[label] = label in self.lines ? self.lines[label].concat(r.lines) : r.lines;
-                            utils.getData(`/api/schedule/running?label=${label}`)
-                                .then(r => self.running[label] = r)
-                                .then(_ => self.$forceUpdate());
-                        })
-                        .catch(utils.notifyError);
-                }
+                const loadingText = 'Loading...';
+
+                const label = self.selected;
+                if (!label) return;
+
+                if (!self.lines[label] || !self.lines[label].length) self.lines[label] = [];
+                if (self.lines[label][self.lines[label].length - 1] === loadingText) return;
+                
+                const lastLine = label in self.lastLine ? self.lastLine[label] : 0;
+                if (lastLine > 0 && !self.isLastLineVisible()) return;
+
+                self.lines[label].push(loadingText);
+                utils.getData(`/api/schedule/lines?label=${label}&after=${lastLine}`)
+                    .then(function (r) {
+                        self.lines[label].pop();
+                        self.lastLine[label] = r.lastId;
+                        self.lines[label] = label in self.lines ? self.lines[label].concat(r.lines) : r.lines;
+                    })
+                    .then(_ => self.$forceUpdate())
+                    .catch(utils.notifyError);
             },
-            displayAdd: function() {
+            periodicActivityCheck: function () {
+                const self = this;
+
+                self.appHosts.forEach(label =>
+                    utils.getData(`/api/schedule/running?label=${label}`)
+                        .then(r => self.running[label] = r)
+                        .then(_ => self.$forceUpdate())
+                        .catch(utils.notifyError));
+            },
+            displayAdd: function () {
                 this.showCronEditor = false;
                 this.addModel = {
                     Program: '',
@@ -134,15 +161,21 @@
                         document.getElementById('add-model-label').focus();
                         return;
                     }
-                }
-                else {
-                    try { model = JSON.parse(self.addModelBatch); }
-                    catch (e) { utils.notify("Couldn't parse JSON!"); return; }
+                } else {
+                    try {
+                        model = JSON.parse(self.addModelBatch);
+                    } catch (e) {
+                        utils.notify("Couldn't parse JSON!");
+                        return;
+                    }
                 }
 
                 utils.postData(url, model)
                     .then(utils.notAnExecption)
-                    .then(function () { self.addModel = null; self.periodicCheck(); })
+                    .then(function () {
+                        self.addModel = null;
+                        self.periodicCheck();
+                    })
                     .catch(console.log);
 
                 self.addModel = "Sending...";
@@ -160,35 +193,57 @@
                 const label = self.selected;
                 utils.getData(`/api/schedule/erase?label=${label}`)
                     .then(utils.notAnExecption)
-                    .then(function () { self.lines[label] = []; self.$forceUpdate(); })
+                    .then(function () {
+                        self.lines[label] = [];
+                        self.$forceUpdate();
+                    })
                     .catch(utils.notifyError);
             },
             navigateTo: url => location.href = url,
             cronstrue: function (str) {
                 try {
                     return cronstrue.toString(str);
-                }
-                catch (e) {
+                } catch (e) {
                     return '???';
                 }
             },
+            isLastLineVisible: function () {
+                const container = '.index-app main';
+                const lastChild = container + ' ul li:last-child';
+                return utils.elementIsVisible(
+                    document.querySelector(lastChild),
+                    document.querySelector(container),
+                    false);
+            }
         },
-        components: { 'cron-editor': VueCronEditorBuefy },
+        watch: {
+            selected: function() { this.periodicActivityCheck(); },
+        },
+        components: {'cron-editor': VueCronEditorBuefy},
         mounted: async function () {
             const self = this;
+            window.app = this;
             self.appHosts = await utils.getData('/api/schedule/apps');
 
-            self.periodicCheck();
-            setInterval(function () { self.periodicCheck(); }, 10000);
+            self.periodicLineCheck();
+            setInterval(function () {
+                self.periodicLineCheck();
+            }, 100);
+
+            self.periodicActivityCheck();
+            setInterval(function () {
+                self.periodicActivityCheck();
+            }, 10000);
         }
     };
 </script>
+
 <style lang="scss">
     #add-multiple {
         width: 141px;
         height: 191.5px
     }
-    
+
     button.wide {
         width: 100%;
     }

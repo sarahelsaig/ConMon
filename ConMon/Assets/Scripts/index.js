@@ -7,7 +7,7 @@ if (!Object.fromEntries) { fromEntries.shim(); }
 const useComponents = window.useComponents = (...components) => Object.fromEntries(components.map(x => [x.name, x]));
 const Vue = window.Vue;
 
-window.app = window.app = new Vue({
+new Vue({
     el: '#app',
     template: '<index-app/>',
     components: useComponents(IndexApp)
