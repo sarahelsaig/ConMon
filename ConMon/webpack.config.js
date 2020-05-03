@@ -1,30 +1,41 @@
-﻿const VueLoaderPlugin = require('vue-loader/lib/plugin');
+﻿const VueLoaderPlugin = require('vue-loader/lib/plugin')
+const path = require('path');
 
 module.exports = {
-    "mode": "development",
-    "entry": __dirname + "/Scripts/index.js",
-    "output": {
-        "path": __dirname + '/wwwroot',
-        "filename": "site.bottom.js"
+    mode: 'development',
+    entry: {
+        main: "./Assets/Scripts/index.js",
     },
-    "module": {
-        "rules": [
+    output: {
+        filename: '[name].js',
+        path: __dirname + '/wwwroot/'
+    },
+    module: {
+        rules: [
             {
-                "test": /\.vue$/,
-                "exclude": /node_modules/,
-                "use": "vue-loader"
+                test: /\.vue$/,
+                loader: 'vue-loader'
             },
             {
-                "test": /\.less$/,
-                "use": [
-                    "style-loader",
-                    "css-loader",
-                    "less-loader"
+                test: /\.js?$/,
+                loader: 'babel-loader',
+                exclude: file => (
+                    /node_modules/.test(file) &&
+                    !/\.vue\.js/.test(file)
+                )
+            },
+            {
+                test: /\.scss$/,
+                use: [
+                    'vue-style-loader',
+                    'css-loader',
+                    'sass-loader'
                 ]
             }
         ]
     },
     plugins: [
+        // make sure to include the plugin!
         new VueLoaderPlugin()
     ]
-};
+}

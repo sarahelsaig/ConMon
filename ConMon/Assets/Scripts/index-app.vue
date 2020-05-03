@@ -2,7 +2,7 @@
     <div class="index-app">
         <header>
             <ul class="menu">
-                <li><button @click="showCronEditor = false; addModel = { Program: '', Arguments: '', WorkingDirectory: '', Label: '', Cron: '0 2 * * *' }">Add</button></li>
+                <li><button @click="displayAdd">Add</button></li>
                 <li><button :disabled="selected === null || running[selected]" @click="trigger">Launch</button></li>
                 <li><button :disabled="selected === null" @click="erase">Erase Lines</button></li>
                 <li><button @click="navigateTo('/hangfire')">Dashboard</button></li>
@@ -17,29 +17,32 @@
                     </div>
                     <template v-if="addModelMode === 'single'">
                         <div>
-                            <div>Label</div>
+                            <label for="add-model-label">Label</label>
                             <input id="add-model-label" v-model="addModel.Label" />
                         </div>
                         <div>
-                            <div>Program</div>
+                            <label for="add-model-program">Program</label>
                             <input id="add-model-program" v-model="addModel.Program" />
                         </div>
                         <div>
-                            <div>Arguments</div>
-                            <input v-model="addModel.Arguments" />
+                            <label for="add-model-arguments">Arguments</label>
+                            <input id="add-model-arguments" v-model="addModel.Arguments" />
                         </div>
                         <div>
-                            <div>Working Directory</div>
-                            <input v-model="addModel.WorkingDirectory" />
+                            <label for="add-model-directory">Working Directory</label>
+                            <input id="add-model-directory" v-model="addModel.WorkingDirectory" />
                         </div>
                         <div>
-                            <div>Cron Expression</div>
-                            <input v-model="addModel.Cron" />
-                            <div style="font-style: italic">{{ cronstrue(addModel.Cron) }}</div>
-                            <button @click="showCronEditor = true" style="width: 100%;">Show Editor</button>
+                            <label for="add-model-cron">Cron Expression</label>
+                            <input id="add-model-cron" v-model="addModel.Cron" />
+                            <div><i>{{ cronstrue(addModel.Cron) }}</i></div>
+                            <button class="wide" @click="showCronEditor = true">Show Editor</button>
                         </div>
                     </template>
-                    <textarea v-else style="width: 141px; height: 191.5px" v-model="addModelBatch"></textarea>
+                    <template v-else>
+                        <label for="add-multiple">JSON</label>
+                        <textarea id="add-multiple" v-model="addModelBatch"></textarea>
+                    </template>
                     <div class="add-model-buttons">
                         <button @click="add">Ok</button>
                         <button @click="addModel = null">Cancel</button>
@@ -50,13 +53,13 @@
             <div v-if="addModel !== null && showCronEditor" class="add-model">
                 <div>
                     <cron-editor v-model="addModel.Cron" />
-                    <button style="width: 100%;" @click="showCronEditor = false;">Done</button>
+                    <button class="wide" @click="showCronEditor = false">Done</button>
                 </div>
             </div>
         </header>
         <nav>
             <ul class="hosts">
-                <li v-for="h in apphosts"
+                <li v-for="h in appHosts"
                     :class="{ host: true, 'host-running' : running[h], 'host-selected' : selected === h }"
                     @click="selected = h">
                     {{ running[h] ? '👷' : '⏱️' }} <span>{{ h }}</span>
@@ -75,12 +78,13 @@
 <script>
     import utils from './utils.js';
     import VueCronEditorBuefy from 'vue-cron-editor-buefy';
+    import cronstrue from 'cronstrue';
 
     export default {
         name: 'index-app',
         data() {
             return {
-                apphosts: [],
+                appHosts: [],
                 selected: null,
                 addModel: null,
                 addModelMode: 'single',
@@ -94,8 +98,8 @@
         methods: {
             periodicCheck: function () {
                 const self = this;
-                for (let i = 0; i < self.apphosts.length; i++) {
-                    const label = self.apphosts[i];
+                for (let i = 0; i < self.appHosts.length; i++) {
+                    const label = self.appHosts[i];
                     const lastLine = label in self.lastLine ? self.lastLine[label] : 0;
                     utils.getData(`/api/schedule/lines?label=${label}&after=${lastLine}`)
                         .then(function (r) {
@@ -107,6 +111,16 @@
                         })
                         .catch(utils.notifyError);
                 }
+            },
+            displayAdd: function() {
+                this.showCronEditor = false;
+                this.addModel = {
+                    Program: '',
+                    Arguments: '',
+                    WorkingDirectory: '',
+                    Label: '',
+                    Cron: '0 2 * * *'
+                };
             },
             add: function () {
                 const self = this;
@@ -138,7 +152,7 @@
                 const label = self.selected;
                 utils.getData(`/api/schedule/trigger?label=${label}`)
                     .then(utils.notAnExecption)
-                    .then(x => self.periodicCheck())
+                    .then(_ => self.periodicCheck())
                     .catch(utils.notifyError);
             },
             erase: function () {
@@ -162,12 +176,20 @@
         components: { 'cron-editor': VueCronEditorBuefy },
         mounted: async function () {
             const self = this;
-            self.apphosts = await utils.getData('/api/schedule/apps');
+            self.appHosts = await utils.getData('/api/schedule/apps');
 
             self.periodicCheck();
             setInterval(function () { self.periodicCheck(); }, 10000);
         }
     };
 </script>
-<style>
+<style lang="scss">
+    #add-multiple {
+        width: 141px;
+        height: 191.5px
+    }
+    
+    button.wide {
+        width: 100%;
+    }
 </style>
