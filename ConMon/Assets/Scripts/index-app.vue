@@ -12,6 +12,12 @@
                     <button :disabled="selected === null" @click="erase">Erase Lines</button>
                 </li>
                 <li>
+                    <button :disabled="selected === null"
+                            @click="mode = (mode === 'consoleOutput' ? 'logFiles' : 'consoleOutput')">
+                        {{ mode === 'consoleOutput' ? 'Download Logs' : 'See Console Output' }}
+                    </button>
+                </li>
+                <li>
                     <button @click="navigateTo('/hangfire')">Dashboard</button>
                 </li>
                 <li class="space">&nbsp;</li>
@@ -74,11 +80,26 @@
                 </li>
             </ul>
         </nav>
-        <main>
+        <main class="console-output" v-if="mode === 'consoleOutput'">
             <ul v-if="selected !== null">
                 <li v-for="(line, i) in lines[selected]">{{ i.toString().padStart(5, '\xa0') }}: {{ line }}</li>
             </ul>
         </main>
+        <main class="log-files" v-else-if="mode === 'logFiles'">
+            <h1 v-if="currentLogs === null">Loading...</h1>
+            <template v-else>
+                <h1>Log and Config Files</h1>
+                <section v-for="(logs, logType) in currentLogs">
+                    <h2>{{ logType.toUpperCase() }}</h2>
+                    <ul>
+                        <li v-for="log in logs">
+                            <a :href="`/api/schedule/logFile?label=${e(selected)}&file=${e(log)}`">{{ log }}</a>
+                        </li>
+                    </ul>
+                </section>
+            </template>
+        </main>
+        <main v-else><h2>Corrupted mode stat: '{{ mode }}'!</h2></main>
         <footer>
         </footer>
     </div>
@@ -95,6 +116,7 @@
         name: 'index-app',
         data() {
             return {
+                mode: 'consoleOutput',
                 appHosts: [],
                 selected: null,
                 addModel: null,
@@ -104,9 +126,11 @@
                 lastLine: {},
                 running: {},
                 showCronEditor: false,
+                currentLogs: null,
             };
         },
         methods: {
+            e: x => encodeURIComponent(x),
             periodicLineCheck: function () {
                 const self = this;
                 const loadingText = 'Loading...';
@@ -116,7 +140,7 @@
 
                 if (!self.lines[label] || !self.lines[label].length) self.lines[label] = [];
                 if (self.lines[label][self.lines[label].length - 1] === loadingText) return;
-                
+
                 const lastLine = label in self.lastLine ? self.lastLine[label] : 0;
                 if (lastLine > 0 && !self.isLastLineVisible()) return;
 
@@ -174,7 +198,7 @@
                     .then(utils.notAnExecption)
                     .then(function () {
                         self.addModel = null;
-                        self.periodicCheck();
+                        self.periodicActivityCheck();
                     })
                     .catch(console.log);
 
@@ -185,7 +209,7 @@
                 const label = self.selected;
                 utils.getData(`/api/schedule/trigger?label=${label}`)
                     .then(utils.notAnExecption)
-                    .then(_ => self.periodicCheck())
+                    .then(_ => self.periodicActivityCheck())
                     .catch(utils.notifyError);
             },
             erase: function () {
@@ -208,16 +232,30 @@
                 }
             },
             isLastLineVisible: function () {
-                const container = '.index-app main';
+                const container = '.index-app .console-output';
                 const lastChild = container + ' ul li:last-child';
                 return utils.elementIsVisible(
                     document.querySelector(lastChild),
                     document.querySelector(container),
                     false);
-            }
+            },
+            updateLogs: function() {
+                const self = this;
+
+                self.currentLogs = null;
+                utils.getData('/api/schedule/logFiles?label=' + self.selected)
+                    .then(r => self.currentLogs = r)
+                    .catch(utils.notifyError);
+            },
         },
         watch: {
-            selected: function() { this.periodicActivityCheck(); },
+            selected: function () {
+                this.periodicActivityCheck();
+                if (this.mode === 'logFiles') this.updateLogs();
+            },
+            mode: function () {
+                if (this.mode === 'logFiles') this.updateLogs();
+            },
         },
         components: {'cron-editor': VueCronEditorBuefy},
         mounted: async function () {
@@ -239,12 +277,5 @@
 </script>
 
 <style lang="scss">
-    #add-multiple {
-        width: 141px;
-        height: 191.5px
-    }
-
-    button.wide {
-        width: 100%;
-    }
+    @import "../Styles/index-app";
 </style>
