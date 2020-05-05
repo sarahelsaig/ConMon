@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using static ConMon.Controllers.ControllerExtensions;
@@ -92,6 +93,34 @@ namespace ConMon.Controllers
             Models.ScheduleLinesResult.FromTuple(_applicationService.BufferGet(label, after));
 
         public ActionResult<string> Ip() => HttpContext.Connection.RemoteIpAddress.ToString();
+
+        public ActionResult<Dictionary<string, string[]>> LogFiles(string label)
+        {
+            return LogsInfo.Create(_applicationService.FindByLabel(label).WorkingDirectory).Groups;
+        }
+        
+        public ActionResult LogFile(string label, string file)
+        {
+            if (string.IsNullOrWhiteSpace(file)) return NotFound("File name is empty.");
+            file = file.ToLower();
+            
+            var logsInfo = LogsInfo.Create(_applicationService.FindByLabel(label).WorkingDirectory);
+            var fileInfo = logsInfo.Directory
+                .GetFiles()
+                .FirstOrDefault(x => x.Name.ToLower() == file);
+            
+            System.IO.File.WriteAllText("log.txt", Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                label,
+                file,
+                logsInfo = new { directory = logsInfo.Directory?.FullName, groups = logsInfo.Groups },
+                fileInfo = fileInfo?.FullName
+            }));
+
+            if (fileInfo?.Exists != true) return NotFound($"The file '{file}' is not found.");
+            var bytes = System.IO.File.ReadAllBytes(fileInfo.FullName);
+            return File(bytes, "text/plain");
+        }
         #endregion
     }
 }

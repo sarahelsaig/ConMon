@@ -26,7 +26,7 @@ namespace ConMon.Services
         }
 
         #region database manipulation
-        Application FindByLabel(string label) => _db.Applications.SingleOrDefault(x => x.Label == label);
+        public Application FindByLabel(string label) => _db.Applications.SingleOrDefault(x => x.Label == label);
         int FindIdByLabel(string label) => _db.Applications.Where(x => x.Label == label).Select(x => x.Id).SingleOrDefault();
         IQueryable<ApplicationLine> GetLines(int id, int after = -1) => _db.ApplicationLines.Where(x => x.ApplicationId == id && x.Id > after).OrderBy(x => x.Id).Take(1000);
         void AddLine(int id, string line) => _db.ApplicationLines.Add(new ApplicationLine { ApplicationId = id, Line = line });
