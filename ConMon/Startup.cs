@@ -10,12 +10,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+// ReSharper disable ConditionIsAlwaysTrueOrFalse
 
 namespace ConMon
 {
     public class Startup
     {
-        public static bool IsDebug { get; } =
+        private const bool IsDebug =
 #if DEBUG
             true;
 #else
@@ -30,15 +31,15 @@ namespace ConMon
         public IConfiguration Configuration { get; }
 
         private Action<DbContextOptionsBuilder> CreateDbConnection(string connectionString) =>
-            new Action<DbContextOptionsBuilder>(options =>
+            options =>
             {
                 switch (Configuration.GetConnectionType())
                 {
                     case ConnectionType.SqlServer: options.UseSqlServer(connectionString); break;
                     case ConnectionType.MySql: options.UseMySql(connectionString); break;
-                    case ConnectionType unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
+                    case { } unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
                 }
-            });
+            };
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
@@ -57,7 +58,7 @@ namespace ConMon
                 {
                     case ConnectionType.SqlServer: configuration.UseSqlServerStorage(schedulerConnectionString); break;
                     case ConnectionType.MySql: configuration.UseStorage(new MySqlStorage(schedulerConnectionString)); break;
-                    case ConnectionType unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
+                    case { } unknown: throw new InvalidOperationException($"Unknown or unsupported connection type: {unknown}");
                 }
             });
             services.AddDbContext<SchedulerContext>(CreateDbConnection(schedulerConnectionString));
@@ -68,14 +69,10 @@ namespace ConMon
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app)
         {
-            if (IsDebug)
-            {
-                app.UseDeveloperExceptionPage();
-            }
-            else
-            {
-                app.UseHsts();
-            }
+            #pragma warning disable 162
+            // ReSharper disable once UnreachableCode
+            app = IsDebug ? app.UseDeveloperExceptionPage() : app.UseHsts();
+            #pragma warning restore 162
 
             app.UseHangfireServer();
             app.UseHangfireDashboard(options: new DashboardOptions

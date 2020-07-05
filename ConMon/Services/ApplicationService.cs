@@ -1,16 +1,13 @@
-﻿using ConMon.Models;
-using ConMon.Models.Scheduler;
-using Hangfire.Server;
-using Microsoft.Extensions.Configuration;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using ConMon.Models;
+using ConMon.Models.Scheduler;
 
 namespace ConMon.Services
 {
@@ -33,6 +30,7 @@ namespace ConMon.Services
         void ClearLines(int id) => _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
         #endregion
 
+        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
         private void ValidString(string text, string name)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -70,7 +68,7 @@ namespace ConMon.Services
                     WorkingDirectory = request.WorkingDirectory,
                 };
                 if (!string.IsNullOrWhiteSpace(request.Cron)) application.Cron = request.Cron;
-                _db.Applications.Add(application);
+                await _db.Applications.AddAsync(application, cancellationToken);
             }
             else
             {
@@ -124,8 +122,10 @@ namespace ConMon.Services
 
                     while (!process.HasExited)
                     {
-                        string line = process.StandardOutput.ReadLine() ?? process.StandardError.ReadLine();
-                        if (line != null) AddLine(id, line ?? ""); else break;
+                        var line = await process.StandardOutput.ReadLineAsync() ??
+                                   await process.StandardError.ReadLineAsync();
+                        if (line == null) break;
+                        AddLine(id, line);
                         await _db.SaveChangesAsync(cancellationToken);
                     }
 
@@ -138,6 +138,7 @@ namespace ConMon.Services
             }
 
             await _db.SaveChangesAsync(cancellationToken);
+            // ReSharper disable once RedundantAssignment
             process = null;
         }
         #endregion

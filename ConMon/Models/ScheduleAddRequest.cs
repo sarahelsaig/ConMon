@@ -1,4 +1,7 @@
 ﻿using ConMon.Classes;
+// ReSharper disable UnusedAutoPropertyAccessor.Global
+// ReSharper disable MemberCanBePrivate.Global
+// ReSharper disable AutoPropertyCanBeMadeGetOnly.Global
 
 namespace ConMon.Models
 {

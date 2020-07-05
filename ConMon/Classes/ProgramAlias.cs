@@ -1,8 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace ConMon.Classes
 {
@@ -12,9 +10,10 @@ namespace ConMon.Classes
         public string Arguments { get; set; }
         public string WorkingDirectory { get; set; }
 
-        public ProgramAlias() { }
-        private ProgramAlias(IConfigurationSection section)
+        private ProgramAlias(IConfigurationSection section = null)
         {
+            if (section == null) return;
+            
             Program = section.GetValue<string>(nameof(Program), null);
             Arguments = section.GetValue<string>(nameof(Arguments), null);
             WorkingDirectory = section.GetValue<string>(nameof(WorkingDirectory), null);

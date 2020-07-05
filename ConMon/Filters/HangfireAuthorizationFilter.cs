@@ -1,7 +1,7 @@
-﻿using Hangfire.Dashboard;
-using Microsoft.Extensions.Configuration;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
+using Hangfire.Dashboard;
+using Microsoft.Extensions.Configuration;
 
 namespace ConMon.Filters
 {
@@ -16,8 +16,8 @@ namespace ConMon.Filters
 
         public bool Authorize(DashboardContext context)
         {
-            var httpContext = context.GetHttpContext();
-
+            //var httpContext = context.GetHttpContext();
+            //
             // Allow all authenticated users to see the Dashboard (potentially dangerous).
             //return httpContext.User.Identity.IsAuthenticated;
             //var allowed = AllowedClients.Contains(context.Request.RemoteIpAddress);

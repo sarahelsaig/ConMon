@@ -195,7 +195,7 @@
                 }
 
                 utils.postData(url, model)
-                    .then(utils.notAnExecption)
+                    .then(utils.notAnException)
                     .then(function () {
                         self.addModel = null;
                         self.periodicActivityCheck();
@@ -208,7 +208,7 @@
                 const self = this;
                 const label = self.selected;
                 utils.getData(`/api/schedule/trigger?label=${label}`)
-                    .then(utils.notAnExecption)
+                    .then(utils.notAnException)
                     .then(_ => self.periodicActivityCheck())
                     .catch(utils.notifyError);
             },
@@ -216,7 +216,7 @@
                 const self = this;
                 const label = self.selected;
                 utils.getData(`/api/schedule/erase?label=${label}`)
-                    .then(utils.notAnExecption)
+                    .then(utils.notAnException)
                     .then(function () {
                         self.lines[label] = [];
                         self.$forceUpdate();

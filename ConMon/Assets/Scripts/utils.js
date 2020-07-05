@@ -32,11 +32,11 @@ function notifyError(e) {
     if (e && e.message && e.message.includes &&
         e.message.includes('NetworkError when attempting to fetch resource'))
         return;
-    notify(e.Message ? e.Message : e);
     console.log(e);
+    return notify('Message' in e ? e.Message : e);
 }
 
-const notAnExecption = function (r) {
+const notAnException = function (r) {
     if (r !== true) throw r;
     return true;
 };
@@ -91,7 +91,7 @@ export default {
 
     notify: notify,
     notifyError: notifyError,
-    notAnExecption: notAnExecption,
+    notAnException: notAnException,
 
     elementIsVisible: elementIsVisibleFunction
 };
