@@ -29,6 +29,9 @@ function notify(message) {
 }
 
 function notifyError(e) {
+    if (e && e.message && e.message.includes &&
+        e.message.includes('NetworkError when attempting to fetch resource'))
+        return;
     notify(e.Message ? e.Message : e);
     console.log(e);
 }

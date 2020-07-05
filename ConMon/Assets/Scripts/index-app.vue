@@ -89,10 +89,10 @@
             <h1 v-if="currentLogs === null">Loading...</h1>
             <template v-else>
                 <h1>Log and Config Files</h1>
-                <section v-for="(logs, logType) in currentLogs">
-                    <h2>{{ logType.toUpperCase() }}</h2>
+                <section v-for="x in currentLogs">
+                    <h2>{{ x.Key.toUpperCase() }}</h2>
                     <ul>
-                        <li v-for="log in logs">
+                        <li v-for="log in x.Value">
                             <a :href="`/api/schedule/logFile?label=${e(selected)}&file=${e(log)}`">{{ log }}</a>
                         </li>
                     </ul>
