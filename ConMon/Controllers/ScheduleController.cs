@@ -43,7 +43,7 @@ namespace ConMon.Controllers
             if (string.IsNullOrWhiteSpace(request.Program))
             {
                 request.Program = _configuration.GetValue("DefaultApplication", @"c:\Windows\System32\cmd.exe");
-                string args = request.Arguments.TrimStart();
+                var args = request.Arguments.TrimStart();
                 if (request.Program.EndsWith("cmd.exe") && !args.StartsWith("/C") && !args.StartsWith("/K"))
                     request.Arguments = $"/C {args.TrimEnd()}";
                 else if (_unixShell.Contains(request.Program) && !args.StartsWith("-c"))
@@ -53,7 +53,7 @@ namespace ConMon.Controllers
                 request.ApplyAlias(_programAliases[request.Program.Trim()]);
 
             await _applicationService.CreateAsync(request, null);
-            string label = request.Label;
+            var label = request.Label;
 
             RecurringJob.AddOrUpdate(
                 request.Label,

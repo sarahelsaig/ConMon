@@ -10,13 +10,12 @@ namespace ConMon.Models
 
         public RunAs(IConfiguration config)
         {
-            if (config != null)
-            {
-                config = config.GetSection(nameof(RunAs));
-                Domain = config.GetValue(nameof(Domain), "");
-                User = config.GetValue(nameof(User), "");
-                Pass = config.GetValue(nameof(Pass), "");
-            }
+            if (config == null) return;
+            
+            config = config.GetSection(nameof(RunAs));
+            Domain = config.GetValue(nameof(Domain), "");
+            User = config.GetValue(nameof(User), "");
+            Pass = config.GetValue(nameof(Pass), "");
         }
     }
 }

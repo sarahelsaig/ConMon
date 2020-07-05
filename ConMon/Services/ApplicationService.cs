@@ -30,13 +30,6 @@ namespace ConMon.Services
         void ClearLines(int id) => _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
         #endregion
 
-        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
-        private void ValidString(string text, string name)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                throw new ArgumentNullException(name);
-        }
-
         #region public API
         public void BufferClear(string label)
         {
@@ -196,6 +189,13 @@ namespace ConMon.Services
             {
                 AddLine(id, ex.ToString());
             }
+        }
+
+        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
+        private void ValidString(string text, string name)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentNullException(name);
         }
         #endregion
     }
