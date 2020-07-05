@@ -1,13 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reactive.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using CliWrap;
+using CliWrap.EventStream;
 using ConMon.Models;
 using ConMon.Models.Scheduler;
+using Humanizer;
 
 namespace ConMon.Services
 {
@@ -24,10 +27,18 @@ namespace ConMon.Services
 
         #region database manipulation
         public Application FindByLabel(string label) => _db.Applications.SingleOrDefault(x => x.Label == label);
-        int FindIdByLabel(string label) => _db.Applications.Where(x => x.Label == label).Select(x => x.Id).SingleOrDefault();
-        IQueryable<ApplicationLine> GetLines(int id, int after = -1) => _db.ApplicationLines.Where(x => x.ApplicationId == id && x.Id > after).OrderBy(x => x.Id).Take(1000);
-        void AddLine(int id, string line) => _db.ApplicationLines.Add(new ApplicationLine { ApplicationId = id, Line = line });
-        void ClearLines(int id) => _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
+
+        private int FindIdByLabel(string label) =>
+            _db.Applications.Where(x => x.Label == label).Select(x => x.Id).SingleOrDefault();
+
+        private IQueryable<ApplicationLine> GetLines(int id, int after = -1) => 
+            _db.ApplicationLines.Where(x => x.ApplicationId == id && x.Id > after).OrderBy(x => x.Id).Take(1000);
+
+        private void AddLine(int id, params string[] lines) => 
+            _db.ApplicationLines.Add(new ApplicationLine { ApplicationId = id, Line = string.Join(" ", lines) });
+
+        private void ClearLines(int id) => 
+            _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
         #endregion
 
         #region public API
@@ -82,48 +93,54 @@ namespace ConMon.Services
             
             var application = FindByLabel(label);
             var id = application.Id;
-
-            // Log start
-            bool hasDirectory = !string.IsNullOrWhiteSpace(application.WorkingDirectory);
-            AddLine(id, $"Starting {application.Program} {application.Arguments} " +
-                $"({_runas?.User ?? Environment.UserName} @ {(hasDirectory ? application.WorkingDirectory : ".")})");
-
-
-            var process = CreateProcess(application, hasDirectory ? application.WorkingDirectory : Environment.CurrentDirectory);
+            var startTime = DateTime.Now;
 
             if (!string.IsNullOrWhiteSpace(_runas?.User))
             {
+                AddLine(id, "WARNING: RUNAS IS CURRENTLY NOT SUPPORTED!! Please remove it from your app settings!");
                 //var password = new System.Security.SecureString();
                 //foreach (var c in RunAsPass) password.AppendChar(c);
 
-                process.StartInfo.Domain = _runas.Domain;
-                process.StartInfo.UserName = _runas.User;
-                process.StartInfo.PasswordInClearText = _runas.Pass;
-                process.StartInfo.Verb = "runas";
+                // process.StartInfo.Domain = _runas.Domain;
+                // process.StartInfo.UserName = _runas.User;
+                // process.StartInfo.PasswordInClearText = _runas.Pass;
+                // process.StartInfo.Verb = "runas";
             }
 
-            process.OutputDataReceived += (o, e) => BufferAdd(id, e);
-            process.ErrorDataReceived += (o, e) => BufferAdd(id, e);
+            var program = ResolveToken(application.Program);
+            var arguments = ResolveToken(application.Arguments);
+            var workingDirectory = ResolveToken(application.WorkingDirectory);
+            if (!Directory.Exists(workingDirectory)) workingDirectory = 
+                Path.GetDirectoryName(program) ?? Environment.CurrentDirectory;
 
             try
             {
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    process.Start();
-                    process.BeginOutputReadLine();
-                    await Task.Run(() => { process.WaitForExit(); }, cancellationToken);
-
-                    while (!process.HasExited)
+                await Cli.Wrap(program)
+                    .WithArguments(arguments)
+                    .WithWorkingDirectory(workingDirectory)
+                    .Observe(cancellationToken)
+                    .ForEachAsync(commandEvent =>
                     {
-                        var line = await process.StandardOutput.ReadLineAsync() ??
-                                   await process.StandardError.ReadLineAsync();
-                        if (line == null) break;
-                        AddLine(id, line);
-                        await _db.SaveChangesAsync(cancellationToken);
-                    }
+                        switch (commandEvent)
+                        {
+                            case StartedCommandEvent started:
+                                AddLine(id, $"Starting {program} {arguments}",
+                                    //$"({_runas?.User ?? Environment.UserName} @ {workingDirectory})");
+                                    $"(#{started.ProcessId}; {Environment.UserName} @ {workingDirectory})");
+                                break;
+                            case StandardOutputCommandEvent output: AddLine(id, output.Text); break;
+                            case StandardErrorCommandEvent error: AddLine(id, error.Text); break;
+                            case ExitedCommandEvent exited:
+                                var endTime = DateTime.Now;
+                                var endTimeText = endTime.ToString("s").Replace('T', ' '); 
+                                var statusText = exited.ExitCode == 0 ? "success" : $"error ({exited.ExitCode})";
+                                AddLine(id, $"Application run for {(endTime - startTime).Humanize()}",
+                                    $"and was terminated at {endTimeText} with ${statusText}."); 
+                                break;
+                        }
 
-                    process.Close();
-                }
+                        _db.SaveChanges();
+                    }, cancellationToken);
             }
             catch (Exception e)
             {
@@ -131,8 +148,6 @@ namespace ConMon.Services
             }
 
             await _db.SaveChangesAsync(cancellationToken);
-            // ReSharper disable once RedundantAssignment
-            process = null;
         }
         #endregion
 
@@ -163,32 +178,6 @@ namespace ConMon.Services
                 ResolveTokenLast(selected + string.Join("::last::", parts.Skip(1)));
 
             return Regex.Replace(input, pattern, result);
-        }
-
-        private Process CreateProcess(Application application, string actualWorkingDirectory) =>
-            new Process()
-            {
-                StartInfo = new ProcessStartInfo(ResolveToken(application.Program), ResolveToken(application.Arguments))
-                {
-                    WorkingDirectory = ResolveToken(actualWorkingDirectory),
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                }
-            };
-
-        private void BufferAdd(int id, DataReceivedEventArgs e)
-        {
-            try
-            {
-                AddLine(id, string.IsNullOrWhiteSpace(e.Data) ? "" : e.Data);
-            }
-            catch (Exception ex)
-            {
-                AddLine(id, ex.ToString());
-            }
         }
 
         // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
