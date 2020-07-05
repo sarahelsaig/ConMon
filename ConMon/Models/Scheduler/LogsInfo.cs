@@ -16,7 +16,7 @@ namespace ConMon.Models.Scheduler
 
             var groups = dir.GetFiles()
                 .GroupBy(x => x.Extension.TrimStart('.'))
-                .ToDictionary(g => g.Key, g => g.Select(fi => fi.Name).ToArray());
+                .ToDictionary(g => g.Key, g => g.Select(fi => fi.Name).OrderBy(x => x).ToArray());
             return new LogsInfo
             {
                 Directory = dir,
