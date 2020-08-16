@@ -271,7 +271,7 @@
             self.periodicActivityCheck();
             setInterval(function () {
                 self.periodicActivityCheck();
-            }, 10000);
+            }, 30000);
         }
     };
 </script>

@@ -10,6 +10,9 @@ using Hangfire;
 using Hangfire.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using System.Diagnostics;
+using System.IO;
+using IoFile = System.IO.File;
 using static ConMon.Controllers.ControllerExtensions;
 
 namespace ConMon.Controllers
@@ -79,7 +82,19 @@ namespace ConMon.Controllers
             using var connection = JobStorage.Current.GetConnection();
 
             var jobs = JobStorage.Current.GetMonitoringApi().ProcessingJobs(0, 1000);
-            return jobs.Any(x => connection.GetRecurringJobName(x.Key).ToLower() == label);
+            if (jobs.Any(x => connection.GetRecurringJobName(x.Key).ToLower() == label)) return true;
+
+            var appDirectory = _applicationService.FindByLabel(label).WorkingDirectory;
+            if (appDirectory != null && Path.Combine(appDirectory, ".lock") is {} lockPath && IoFile.Exists(lockPath))
+            {
+                var lockValue = IoFile.ReadAllText(lockPath).Trim();
+                if (int.TryParse(lockValue, out var processId) && Process.GetProcesses().Any(x => x.Id == processId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public ActionResult<object> Trigger(string label) =>
