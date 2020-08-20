@@ -207,7 +207,8 @@
             trigger: function () {
                 const self = this;
                 const label = self.selected;
-                utils.getData(`/api/schedule/trigger?label=${label}`)
+                self.running[label] = true;
+                return utils.getData(`/api/schedule/trigger?label=${label}`)
                     .then(utils.notAnException)
                     .then(_ => self.periodicActivityCheck())
                     .catch(utils.notifyError);

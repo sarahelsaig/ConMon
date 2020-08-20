@@ -1,4 +1,9 @@
-﻿using System;
+﻿using CliWrap;
+using CliWrap.EventStream;
+using ConMon.Models;
+using ConMon.Models.Scheduler;
+using Humanizer;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,11 +11,6 @@ using System.Reactive.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using CliWrap;
-using CliWrap.EventStream;
-using ConMon.Models;
-using ConMon.Models.Scheduler;
-using Humanizer;
 
 namespace ConMon.Services
 {
@@ -26,22 +26,25 @@ namespace ConMon.Services
         }
 
         #region database manipulation
+
         public Application FindByLabel(string label) => _db.Applications.SingleOrDefault(x => x.Label == label);
 
         private int FindIdByLabel(string label) =>
             _db.Applications.Where(x => x.Label == label).Select(x => x.Id).SingleOrDefault();
 
-        private IQueryable<ApplicationLine> GetLines(int id, int after = -1) => 
+        private IQueryable<ApplicationLine> GetLines(int id, int after = -1) =>
             _db.ApplicationLines.Where(x => x.ApplicationId == id && x.Id > after).OrderBy(x => x.Id).Take(1000);
 
-        private void AddLine(int id, params string[] lines) => 
+        private void AddLine(int id, params string[] lines) =>
             _db.ApplicationLines.Add(new ApplicationLine { ApplicationId = id, Line = string.Join(" ", lines) });
 
-        private void ClearLines(int id) => 
+        private void ClearLines(int id) =>
             _db.ApplicationLines.RemoveRange(_db.ApplicationLines.Where(x => x.ApplicationId == id));
+
         #endregion
 
         #region public API
+
         public void BufferClear(string label)
         {
             ValidString(label, nameof(label));
@@ -90,7 +93,7 @@ namespace ConMon.Services
         {
             ValidString(label, nameof(label));
             var cancellationToken = optionalCancellationToken ?? new CancellationToken(false);
-            
+
             var application = FindByLabel(label);
             var id = application.Id;
             var startTime = DateTime.Now;
@@ -110,8 +113,9 @@ namespace ConMon.Services
             var program = ResolveToken(application.Program);
             var arguments = ResolveToken(application.Arguments);
             var workingDirectory = ResolveToken(application.WorkingDirectory);
-            if (!Directory.Exists(workingDirectory)) workingDirectory = 
-                Path.GetDirectoryName(program) ?? Environment.CurrentDirectory;
+            if (!Directory.Exists(workingDirectory))
+                workingDirectory =
+                    Path.GetDirectoryName(program) ?? Environment.CurrentDirectory;
 
             try
             {
@@ -128,14 +132,18 @@ namespace ConMon.Services
                                     //$"({_runas?.User ?? Environment.UserName} @ {workingDirectory})");
                                     $"(#{started.ProcessId}; {Environment.UserName} @ {workingDirectory})");
                                 break;
-                            case StandardOutputCommandEvent output: AddLine(id, output.Text); break;
-                            case StandardErrorCommandEvent error: AddLine(id, error.Text); break;
+                            case StandardOutputCommandEvent output:
+                                AddLine(id, output.Text);
+                                break;
+                            case StandardErrorCommandEvent error:
+                                AddLine(id, error.Text);
+                                break;
                             case ExitedCommandEvent exited:
                                 var endTime = DateTime.Now;
-                                var endTimeText = endTime.ToString("s").Replace('T', ' '); 
+                                var endTimeText = endTime.ToString("s").Replace('T', ' ');
                                 var statusText = exited.ExitCode == 0 ? "success" : $"error ({exited.ExitCode})";
                                 AddLine(id, $"Application run for {(endTime - startTime).Humanize()}",
-                                    $"and was terminated at {endTimeText} with ${statusText}."); 
+                                    $"and was terminated at {endTimeText} with ${statusText}.");
                                 break;
                         }
 
@@ -149,9 +157,11 @@ namespace ConMon.Services
 
             await _db.SaveChangesAsync(cancellationToken);
         }
+
         #endregion
 
         #region Auxiliary functions
+
         private static string ResolveToken(string txt)
         {
             if (txt?.Contains("::last::") == true)
@@ -160,24 +170,47 @@ namespace ConMon.Services
             return txt;
         }
 
-        private static string ResolveTokenLast(string input)
+        public static string ResolveTokenLast(string input)
         {
-            const string pattern = @"<([^<]*::last::[^<]*)>";
-            var parts = Regex.Match(input, pattern).Groups[1].Value
-                .Split(new[] { "::last::" }, StringSplitOptions.None);
-            while (string.IsNullOrWhiteSpace(parts.Last()))
-                parts = parts.Take(parts.Length - 1).ToArray();
+            const string token = "::last::";
+            if (!input.Contains(token)) return input;
 
-            var targets = Directory.GetDirectories(parts[0]);
-            if (parts.Length == 2 && !parts[1].Contains("\\"))
-                targets = targets.Concat(Directory.GetFiles(parts[0])).ToArray();
-            var selected = targets.Last();
+            // Find the replace pattern in the text, split the inside into parts along the ::last:: token.
+            var match = Regex.Match(input, @"<([^<]*::last::[^<]*)>");
+            var pattern = match.Groups[0].Value;
+            var inner = match.Groups[1].Value.Trim();
+            if (inner.StartsWith(token)) inner = $".{Path.DirectorySeparatorChar}{inner}";
 
-            var result = parts.Length == 1 ? selected :
-                parts.Length == 2 ? selected + parts[1] :
-                ResolveTokenLast(selected + string.Join("::last::", parts.Skip(1)));
+            string Inner(string prefix, string subValue)
+            {
+                if (!subValue.Contains(token)) return subValue;
+                if (subValue.Trim().EndsWith(token))
+                {
+                    throw new InvalidOperationException("The '::last::' token must refer to a directory. If you are " +
+                                                        "looking for the last directory in the given path, use a " +
+                                                        "trailing slash! (eg. '::last::/')");
+                }
 
-            return Regex.Replace(input, pattern, result);
+                var parts = subValue.Split(new[] { token }, StringSplitOptions.None);
+                while (parts.Length > 0 && string.IsNullOrWhiteSpace(parts.Last()))
+                {
+                    parts = parts.Take(parts.Length - 1).ToArray();
+                }
+
+                // Select the alphabetically last directory. If there is only one part, return selected.
+                if (parts.Length == 0) parts = new[] { "." };
+                var selected = Directory.GetDirectories(prefix + parts[0]).OrderByDescending(x => x).First();
+                if (parts.Length == 1) return selected;
+
+                // Attach selected to the rest. Recurse if the remainder had more tokens.
+                var remainder = (parts.Length == 2 ? parts[1] : Inner(selected, string.Join(token, parts.Skip(1))))
+                    .TrimStart('/')
+                    .TrimStart('\\');
+                return parts.Length == 2 ? Path.Combine(selected, remainder) : remainder;
+            }
+
+            var result = Inner(string.Empty, inner);
+            return input.Replace(pattern, result);
         }
 
         // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
@@ -186,6 +219,7 @@ namespace ConMon.Services
             if (string.IsNullOrWhiteSpace(text))
                 throw new ArgumentNullException(name);
         }
+
         #endregion
     }
 }
