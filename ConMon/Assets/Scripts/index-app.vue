@@ -112,6 +112,13 @@
 
     window.utils = utils;
 
+    window.forceOn = function(self, label, seconds) {
+        if (seconds <= 0) return;
+        self.running[label] = true;
+        self.$forceUpdate();
+        setTimeout(window.forceOn, 100, self, label, seconds - 0.1);
+    }
+
     export default {
         name: 'index-app',
         data() {
@@ -207,7 +214,8 @@
             trigger: function () {
                 const self = this;
                 const label = self.selected;
-                self.running[label] = true;
+                forceOn(self, label, 3);
+                
                 return utils.getData(`/api/schedule/trigger?label=${label}`)
                     .then(utils.notAnException)
                     .then(_ => self.periodicActivityCheck())
