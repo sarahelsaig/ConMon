@@ -36,5 +36,10 @@ module.exports = {
     plugins: [
         // make sure to include the plugin!
         new VueLoaderPlugin()
-    ]
+    ],
+    performance: {
+        hints: false,
+        maxEntrypointSize: 1000000,
+        maxAssetSize: 1000000
+    }
 }

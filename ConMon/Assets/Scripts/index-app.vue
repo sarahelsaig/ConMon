@@ -8,10 +8,10 @@
                 <li>
                     <button :disabled="selected === null || running[selected]" @click="trigger">Launch</button>
                 </li>
-                <li>
+                <li hidden>
                     <button :disabled="selected === null" @click="erase">Erase Lines</button>
                 </li>
-                <li>
+                <li hidden>
                     <button :disabled="selected === null"
                             @click="mode = (mode === 'consoleOutput' ? 'logFiles' : 'consoleOutput')">
                         {{ mode === 'consoleOutput' ? 'Download Logs' : 'See Console Output' }}
@@ -116,7 +116,7 @@
         name: 'index-app',
         data() {
             return {
-                mode: 'consoleOutput',
+                mode: 'logFiles',
                 appHosts: [],
                 selected: null,
                 addModel: null,
@@ -241,9 +241,10 @@
             },
             updateLogs: function() {
                 const self = this;
+                if (!self.selected) return Promise.resolve(self.selected);
 
                 self.currentLogs = null;
-                utils.getData('/api/schedule/logFiles?label=' + self.selected)
+                return utils.getData('/api/schedule/logFiles?label=' + self.selected)
                     .then(r => self.currentLogs = r)
                     .catch(utils.notifyError);
             },
@@ -257,21 +258,22 @@
                 if (this.mode === 'logFiles') this.updateLogs();
             },
         },
-        components: {'cron-editor': VueCronEditorBuefy},
+        components: { 'cron-editor': VueCronEditorBuefy },
         mounted: async function () {
             const self = this;
             window.app = this;
             self.appHosts = await utils.getData('/api/schedule/apps');
+            self.selected = self.appHosts[0];
 
             self.periodicLineCheck();
             setInterval(function () {
-                self.periodicLineCheck();
+                if (self.mode === 'consoleOutput') self.periodicLineCheck();
             }, 100);
 
             self.periodicActivityCheck();
             setInterval(function () {
                 self.periodicActivityCheck();
-            }, 30000);
+            }, 10000);
         }
     };
 </script>
